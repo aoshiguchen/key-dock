@@ -1,0 +1,706 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { GripVertical, Plus, Trash2, X } from 'lucide-react';
+import { DEFAULT_POPUP_POSITION, POPUP_POSITION_OPTIONS } from '../shared/popup-position';
+import type { EnvConfig, FieldConfig, FieldTemplate, ProjectConfig, ProjectGroup, SyncConfig } from '../shared/types';
+
+let modalIdCounter = 0;
+
+type EnvDraft = EnvConfig & {
+  hostsText: string;
+  pathKeywordsText: string;
+  retryDelaysText: string;
+};
+
+type ModalProps = {
+  open: boolean;
+  title: string;
+  width?: number;
+  mode?: 'modal' | 'drawer';
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+};
+
+function ModalShell({ open, title, width = 900, mode = 'modal', onClose, children, footer }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const [titleId] = useState(() => `wm-modal-title-${++modalIdCounter}`);
+
+  const trapFocus = useCallback((event: KeyboardEvent) => {
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+    const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey) {
+      if (document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    triggerRef.current = document.activeElement as HTMLElement;
+    const timer = setTimeout(() => {
+      const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      firstFocusable?.focus();
+    }, 0);
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', trapFocus);
+      triggerRef.current?.focus();
+    };
+  }, [open, trapFocus]);
+
+  if (!open) return null;
+  return (
+    <div className={`wm-overlay ${mode === 'drawer' ? 'wm-overlay--drawer' : ''}`} role="presentation">
+      <div
+        ref={dialogRef}
+        className={`wm-modal ${mode === 'drawer' ? 'wm-drawer' : ''}`}
+        style={{ width: `min(${width}px, calc(100vw - 32px))` }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <div className="wm-modal__header">
+          <strong id={titleId}>{title}</strong>
+          <button className="wm-icon-btn" type="button" aria-label="关闭" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </div>
+        <div className="wm-modal__body">{children}</div>
+        {footer ? <div className="wm-modal__footer">{footer}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function moveItem<T>(items: T[], from: number, to: number): T[] {
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+function toRetryText(delays: number[]): string {
+  return delays.join(', ');
+}
+
+function toListText(values: string[]): string {
+  return values.join(', ');
+}
+
+function parseListText(text: string): string[] {
+  return text
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseRetryText(text: string): number[] {
+  return text
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value));
+}
+
+export function ProjectEditorModal({
+  open,
+  project,
+  groups,
+  fieldTemplates,
+  title,
+  mode = 'modal',
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  project: ProjectConfig | null;
+  groups: ProjectGroup[];
+  fieldTemplates: FieldTemplate[];
+  title: string;
+  mode?: 'modal' | 'drawer';
+  onClose: () => void;
+  onSave: (next: ProjectConfig) => void;
+}) {
+  const [draft, setDraft] = useState<ProjectConfig | null>(project);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+  useEffect(() => {
+    if (!open || !project) return;
+    setDraft(clone(project));
+    setSelectedTemplateId('');
+  }, [open, project]);
+
+  const canSave = Boolean(draft?.id.trim() && draft?.name.trim());
+
+  return (
+    <ModalShell
+      open={open && Boolean(draft)}
+      title={title}
+      width={640}
+      mode={mode}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="wm-btn" onClick={onClose}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="wm-btn wm-btn--primary"
+            disabled={!canSave}
+            onClick={() => {
+              if (!draft) return;
+              onSave({ ...draft, fields: draft.fields ?? [], envs: draft.envs ?? [] });
+            }}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
+      {draft ? (
+        <div className="wm-grid wm-grid--2">
+          <label className="wm-field">
+            <span>项目 ID *</span>
+            <input value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} />
+          </label>
+          <label className="wm-field">
+            <span>项目名称 *</span>
+            <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          </label>
+          <label className="wm-field">
+            <span>项目分组</span>
+            <select value={draft.groupCode ?? 'default'} onChange={(event) => setDraft({ ...draft, groupCode: event.target.value })}>
+              {groups.map((group) => (
+                <option key={group.code} value={group.code}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="wm-field">
+            <span>字段配置模板</span>
+            <select
+              value={selectedTemplateId}
+              onChange={(event) => {
+                const templateId = event.target.value;
+                setSelectedTemplateId(templateId);
+                const template = fieldTemplates.find((item) => item.id === templateId);
+                if (template) {
+                  setDraft({ ...draft, fields: clone(template.fields) });
+                }
+              }}
+            >
+              <option value="">不使用模板</option>
+              {fieldTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="wm-field">
+            <span>登录页弹窗位置</span>
+            <select
+              value={draft.popupPosition ?? DEFAULT_POPUP_POSITION}
+              onChange={(event) => setDraft({ ...draft, popupPosition: event.target.value as ProjectConfig['popupPosition'] })}
+            >
+              {POPUP_POSITION_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+    </ModalShell>
+  );
+}
+
+export function ProjectFieldsModal({
+  open,
+  project,
+  title,
+  showCopyable = true,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  project: ProjectConfig | null;
+  title: string;
+  showCopyable?: boolean;
+  onClose: () => void;
+  onSave: (nextFields: FieldConfig[]) => void;
+}) {
+  const [draft, setDraft] = useState<FieldConfig[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open || !project) return;
+    setDraft(clone(project.fields));
+  }, [open, project]);
+
+  const fieldCount = useMemo(() => draft.length, [draft]);
+
+  return (
+    <ModalShell
+      open={open && Boolean(project)}
+      title={title}
+      width={1180}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="wm-tiny">共 {fieldCount} 个字段</span>
+          <div className="wm-inline">
+            <button type="button" className="wm-btn" onClick={onClose}>
+              取消
+            </button>
+            <button type="button" className="wm-btn wm-btn--primary" onClick={() => onSave(clone(draft))}>
+              保存
+            </button>
+          </div>
+        </>
+      }
+    >
+      <div className="wm-inline" style={{ justifyContent: 'space-between' }}>
+        <div className="wm-tiny">字段配置支持增删改查和拖动排序。带 * 的字段为必填；input 类型还需要配置选择器。</div>
+        <button
+          type="button"
+          className="wm-btn wm-btn--primary"
+          onClick={() =>
+            setDraft((prev) => [
+              ...prev,
+              {
+                key: `field_${Date.now()}`,
+                label: '新字段',
+                type: 'input',
+                selector: '',
+                sensitive: false,
+                required: false,
+                copyable: true,
+                minWidth: 120,
+                maxWidth: 220,
+              },
+            ])
+          }
+        >
+          <Plus size={14} /> 新增字段
+        </button>
+      </div>
+      <table className="wm-table">
+        <thead>
+          <tr>
+            <th>顺序</th>
+            <th>Key *</th>
+            <th>名称 *</th>
+            <th>类型 *</th>
+            <th>选择器</th>
+            <th>敏感</th>
+            <th>必填</th>
+            {showCopyable ? <th>复制</th> : null}
+            <th>宽度</th>
+            <th>最小/最大</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {draft.map((field, index) => (
+            <tr
+              key={index}
+              draggable
+              onDragStart={() => setDragIndex(index)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => {
+                if (dragIndex === null || dragIndex === index) return;
+                setDraft((prev) => moveItem(prev, dragIndex, index));
+                setDragIndex(null);
+              }}
+              onDragEnd={() => setDragIndex(null)}
+            >
+              <td>
+                <button type="button" className="wm-icon-btn" title="拖动排序" onDragStart={() => setDragIndex(index)}>
+                  <GripVertical size={14} />
+                </button>
+              </td>
+              <td>
+                <input
+                  value={field.key}
+                  onChange={(event) => setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, key: event.target.value } : item)))}
+                />
+              </td>
+              <td>
+                <input
+                  value={field.label}
+                  onChange={(event) => setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, label: event.target.value } : item)))}
+                />
+              </td>
+              <td>
+                <select
+                  value={field.type}
+                  onChange={(event) =>
+                    setDraft((prev) =>
+                      prev.map((item, i) => {
+                        if (i !== index) return item;
+                        const type = event.target.value as FieldConfig['type'];
+                        return type === 'display' ? { ...item, type, selector: '' } : { ...item, type };
+                      }),
+                    )
+                  }
+                >
+                  <option value="input">input</option>
+                  <option value="display">display</option>
+                </select>
+              </td>
+              <td>
+                <input
+                  value={field.selector ?? ''}
+                  disabled={field.type === 'display'}
+                  placeholder={field.type === 'display' ? '展示字段不填充页面' : 'CSS selector'}
+                  onChange={(event) =>
+                    setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, selector: event.target.value } : item)))
+                  }
+                />
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={field.sensitive}
+                  onChange={(event) =>
+                    setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, sensitive: event.target.checked } : item)))
+                  }
+                />
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={Boolean(field.required)}
+                  onChange={(event) =>
+                    setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, required: event.target.checked } : item)))
+                  }
+                />
+              </td>
+              {showCopyable ? (
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={field.copyable !== false}
+                    onChange={(event) =>
+                      setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, copyable: event.target.checked } : item)))
+                    }
+                  />
+                </td>
+              ) : null}
+              <td>
+                <input
+                  value={String(field.width ?? '')}
+                  onChange={(event) => setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, width: event.target.value } : item)))}
+                />
+              </td>
+              <td className="wm-inline" style={{ flexWrap: 'nowrap' }}>
+                <input
+                  style={{ width: 80 }}
+                  value={String(field.minWidth ?? '')}
+                  onChange={(event) =>
+                    setDraft((prev) =>
+                      prev.map((item, i) => (i === index ? { ...item, minWidth: Number(event.target.value || 0) || undefined } : item)),
+                    )
+                  }
+                />
+                <input
+                  style={{ width: 80 }}
+                  value={String(field.maxWidth ?? '')}
+                  onChange={(event) =>
+                    setDraft((prev) =>
+                      prev.map((item, i) => (i === index ? { ...item, maxWidth: Number(event.target.value || 0) || undefined } : item)),
+                    )
+                  }
+                />
+              </td>
+              <td className="wm-actions-col">
+                <button className="wm-btn wm-btn--danger" type="button" onClick={() => setDraft((prev) => prev.filter((_, i) => i !== index))}>
+                  <Trash2 size={13} /> 删除
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ModalShell>
+  );
+}
+
+export function ProjectEnvsModal({
+  open,
+  project,
+  title,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  project: ProjectConfig | null;
+  title: string;
+  onClose: () => void;
+  onSave: (nextEnvs: EnvConfig[]) => void;
+}) {
+  const [draft, setDraft] = useState<EnvDraft[]>([]);
+
+  useEffect(() => {
+    if (!open || !project) return;
+    setDraft(
+      clone(project.envs).map((env) => ({
+        ...env,
+        hostsText: toListText(env.hosts),
+        pathKeywordsText: toListText(env.pathKeywords),
+        retryDelaysText: toRetryText(env.retryDelays),
+      })),
+    );
+  }, [open, project]);
+
+  return (
+    <ModalShell
+      open={open && Boolean(project)}
+      title={title}
+      width={1180}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="wm-tiny">共 {draft.length} 个环境</span>
+          <div className="wm-inline">
+            <button type="button" className="wm-btn" onClick={onClose}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="wm-btn wm-btn--primary"
+              onClick={() =>
+                onSave(
+                  clone(draft).map((env) => ({
+                    id: env.id,
+                    name: env.name,
+                    hosts: parseListText(env.hostsText),
+                    pathKeywords: parseListText(env.pathKeywordsText),
+                    retryDelays: parseRetryText(env.retryDelaysText),
+                    accounts: env.accounts,
+                  })),
+                )
+              }
+            >
+              保存
+            </button>
+          </div>
+        </>
+      }
+    >
+      <div className="wm-inline" style={{ justifyContent: 'space-between' }}>
+        <div className="wm-tiny">
+          环境配置支持增删改查。带 * 的字段为必填。Hosts 和 Path 关键字使用英文逗号分隔；重试延迟示例：0, 500, 1000。
+        </div>
+        <button
+          type="button"
+          className="wm-btn wm-btn--primary"
+          onClick={() =>
+            setDraft((prev) => [
+              ...prev,
+              {
+                id: `env_${Date.now()}`,
+                name: '新环境',
+                hosts: ['example.com'],
+                hostsText: 'example.com',
+                pathKeywords: ['/login'],
+                pathKeywordsText: '/login',
+                retryDelays: [0, 500],
+                accounts: [],
+                retryDelaysText: '0, 500',
+              },
+            ])
+          }
+        >
+          <Plus size={14} /> 新增环境
+        </button>
+      </div>
+      <div className="wm-grid">
+        {draft.map((env, index) => (
+          <div className="wm-card" key={index}>
+            <div className="wm-card__hd">
+              <strong>{env.name || env.id}</strong>
+              <button className="wm-btn wm-btn--danger" type="button" onClick={() => setDraft((prev) => prev.filter((_, i) => i !== index))}>
+                <Trash2 size={13} /> 删除
+              </button>
+            </div>
+            <div className="wm-card__bd">
+              <div className="wm-grid wm-grid--2">
+                <label className="wm-field">
+                  <span>环境 ID *</span>
+                  <input
+                    value={env.id}
+                    onChange={(event) => setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, id: event.target.value } : item)))}
+                  />
+                </label>
+                <label className="wm-field">
+                  <span>环境名称 *</span>
+                  <input
+                    value={env.name}
+                    onChange={(event) => setDraft((prev) => prev.map((item, i) => (i === index ? { ...item, name: event.target.value } : item)))}
+                  />
+                </label>
+                <label className="wm-field">
+                  <span>Hosts *</span>
+                  <small>英文逗号分隔，例如 10.0.0.1, login.example.com</small>
+                  <input
+                    value={env.hostsText}
+                    onChange={(event) =>
+                      setDraft((prev) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                hostsText: event.target.value,
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label className="wm-field">
+                  <span>Path 关键字 *</span>
+                  <small>英文逗号分隔，例如 /login, /admin</small>
+                  <input
+                    value={env.pathKeywordsText}
+                    onChange={(event) =>
+                      setDraft((prev) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                pathKeywordsText: event.target.value,
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label className="wm-field">
+                  <span>重试延迟 *</span>
+                  <small>英文逗号分隔，单位毫秒，例如 0, 500, 1000</small>
+                  <input
+                    value={env.retryDelaysText}
+                    placeholder="0, 500, 1000"
+                    onChange={(event) =>
+                      setDraft((prev) =>
+                        prev.map((item, i) => (i === index ? { ...item, retryDelaysText: event.target.value } : item)),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </ModalShell>
+  );
+}
+
+export function ExportConfigModal({
+  open,
+  config,
+  onClose,
+  onExport,
+}: {
+  open: boolean;
+  config: { projects: Array<{ id: string; name: string }>; sync: SyncConfig };
+  onClose: () => void;
+  onExport: (options: { projectIds: string[]; includeMinio: boolean; includeAppearance: boolean }) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [includeMinio, setIncludeMinio] = useState(false);
+  const [includeAppearance, setIncludeAppearance] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    const ids = config.projects.map((item) => item.id);
+    setSelected(ids);
+    setIncludeMinio(Boolean(config.sync.minioEnabled || config.sync.endpoint || config.sync.bucket || config.sync.accessKey || config.sync.secretKey));
+    setIncludeAppearance(true);
+  }, [config, open]);
+
+  const hasMinio = Boolean(config.sync.minioEnabled || config.sync.endpoint || config.sync.bucket || config.sync.accessKey || config.sync.secretKey);
+
+  return (
+    <ModalShell
+      open={open}
+      title="导出配置"
+      width={720}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="wm-btn" onClick={onClose}>
+            取消
+          </button>
+          <button type="button" className="wm-btn wm-btn--primary" onClick={() => onExport({ projectIds: selected, includeMinio, includeAppearance })}>
+            导出
+          </button>
+        </>
+      }
+    >
+      <div className="wm-tiny">默认全选项目，可按需取消项目，并决定是否导出 MinIO 配置。</div>
+      <div className="wm-grid">
+        <div className="wm-inline">
+          <button type="button" className="wm-btn" onClick={() => setSelected(config.projects.map((item) => item.id))}>
+            全选
+          </button>
+          <button type="button" className="wm-btn" onClick={() => setSelected([])}>
+            全不选
+          </button>
+        </div>
+        {config.projects.map((project) => (
+          <label key={project.id} className="wm-inline">
+            <input
+              type="checkbox"
+              checked={selected.includes(project.id)}
+              onChange={(event) =>
+                setSelected((prev) =>
+                  event.target.checked ? [...prev, project.id] : prev.filter((item) => item !== project.id),
+                )
+              }
+            />
+            {project.name} <span className="wm-tiny">{project.id}</span>
+          </label>
+        ))}
+        {hasMinio ? (
+          <label className="wm-inline">
+            <input type="checkbox" checked={includeMinio} onChange={(event) => setIncludeMinio(event.target.checked)} />
+            导出 MinIO 配置
+          </label>
+        ) : null}
+        <label className="wm-inline">
+          <input type="checkbox" checked={includeAppearance} onChange={(event) => setIncludeAppearance(event.target.checked)} />
+          导出主题设置
+        </label>
+      </div>
+    </ModalShell>
+  );
+}

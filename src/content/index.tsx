@@ -1,0 +1,620 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { CSSProperties } from 'react';
+import { Copy, Eye, EyeOff, Pencil, Plus, X } from 'lucide-react';
+import rawPrimitives from '../shared/tokens/primitives.css';
+import rawSemantic from '../shared/tokens/semantic.css';
+import rawComponents from '../shared/tokens/components.css';
+import rawStyles from '../extension/styles.css';
+import { AccountEditorModal } from '../shared/AccountEditorModal';
+import { copyText, createInputEvents, waitForSelector } from '../shared/account-utils';
+import { resolveFillSelector } from '../shared/config-normalize';
+import { STORAGE_KEY } from '../shared/defaults';
+import { EXTENSION_ENABLED_KEY, readExtensionEnabled } from '../shared/extension-state';
+import { matchCurrentPage, getDefaultAccountId } from '../shared/match';
+import { readAppConfig, writeAppConfig } from '../shared/storage';
+import { saveAccount, removeAccount, setDefaultAccount } from '../shared/config-ops';
+import { DEFAULT_POPUP_POSITION } from '../shared/popup-position';
+import { getAppearanceClassName } from '../shared/theme';
+import type { AccountRecord, AppConfig, MatchedEnvironment, PopupPosition } from '../shared/types';
+
+type PanelPositionState = {
+  x: number;
+  y: number;
+  manual: boolean;
+};
+
+type ToastState = {
+  x: number;
+  y: number;
+  text: string;
+  variant: 'success' | 'error' | 'warning';
+};
+
+type AccountPickerState = {
+  x: number;
+  y: number;
+  selectedIndex: number;
+};
+
+const PANEL_OFFSET = 24;
+const TOAST_DURATION_MS = 1200;
+
+function findCurrentMatch(config: AppConfig): MatchedEnvironment | null {
+  return matchCurrentPage(config, window.location);
+}
+
+function getPanelAnchorStyle(position: PopupPosition): CSSProperties {
+  switch (position) {
+    case 'top-left':
+      return { left: PANEL_OFFSET, top: PANEL_OFFSET };
+    case 'left':
+      return { left: PANEL_OFFSET, top: '50%', transform: 'translateY(-50%)' };
+    case 'bottom-left':
+      return { left: PANEL_OFFSET, bottom: PANEL_OFFSET };
+    case 'top':
+      return { left: '50%', top: PANEL_OFFSET, transform: 'translateX(-50%)' };
+    case 'center':
+      return { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
+    case 'bottom':
+      return { left: '50%', bottom: PANEL_OFFSET, transform: 'translateX(-50%)' };
+    case 'right':
+      return { right: PANEL_OFFSET, top: '50%', transform: 'translateY(-50%)' };
+    case 'bottom-right':
+      return { right: PANEL_OFFSET, bottom: PANEL_OFFSET };
+    case 'top-right':
+    default:
+      return { right: PANEL_OFFSET, top: PANEL_OFFSET };
+  }
+}
+
+function injectStylesheet() {
+  const id = 'web-account-assistant-style';
+  if (document.getElementById(id)) return;
+  const style = document.createElement('style');
+  style.id = id;
+  const allStyles = [rawPrimitives, rawSemantic, rawComponents, rawStyles].join('\n');
+  style.textContent = toContentStyles(allStyles);
+  document.head.appendChild(style);
+}
+
+function toContentStyles(styles: string): string {
+  // Content CSS is injected into arbitrary host pages; rewrite global selectors so
+  // KeyDock styles stay inside our root and do not leak into the business page.
+  return styles
+    .replace(/@import\s+['"][^'"]*['"];?\s*/g, '')
+    .replace(/:root\s*\{/g, '#web-account-assistant-root {')
+    .replace('* {', '#web-account-assistant-root, #web-account-assistant-root * {')
+    .replace(/html,\s*body,\s*#root\s*\{[^}]*\}/, '#web-account-assistant-root { color: var(--text); }')
+    .replace(/\.(wm-theme-tech-dark|wm-theme-minimal-light|wm-theme-vivid-color)/g, '#web-account-assistant-root.$1')
+    .replace(/\.(wm-font-small|wm-font-medium|wm-font-large)/g, '#web-account-assistant-root.$1')
+    .replace(/\.(wm-motion-off)/g, '#web-account-assistant-root.$1');
+}
+
+async function fillMatchedAccount(currentMatch: MatchedEnvironment, account: AccountRecord) {
+  for (const field of currentMatch.fields) {
+    if (field.type !== 'input') continue;
+    const selector = resolveFillSelector(field, currentMatch.fields);
+    if (!selector) continue;
+    const element = await waitForSelector(selector, currentMatch.env.retryDelays);
+    if (!element) continue;
+    const value = account.values[field.key] ?? '';
+    if ('value' in element) {
+      (element as HTMLInputElement | HTMLTextAreaElement).value = value;
+      // Native input/change events are required for React/Vue/Angular controlled
+      // fields to notice values written by the extension.
+      createInputEvents(element as HTMLInputElement | HTMLTextAreaElement);
+    }
+  }
+}
+
+function accountInfoText(currentMatch: MatchedEnvironment, account: AccountRecord): string {
+  const text = currentMatch.fields
+    .filter((field) => !field.sensitive)
+    .map((field) => account.values[field.key] ?? '')
+    .filter(Boolean)
+    .join('|');
+  return text || '未填写非敏感字段';
+}
+
+function isConfiguredInputTarget(target: EventTarget | null, currentMatch: MatchedEnvironment): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return currentMatch.fields.some((field) => {
+    if (field.type !== 'input') return false;
+    const selector = resolveFillSelector(field, currentMatch.fields);
+    if (!selector) return false;
+    try {
+      return target.matches(selector);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function Panel() {
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [matched, setMatched] = useState<MatchedEnvironment | null>(null);
+  const [enabled, setEnabled] = useState(true);
+  const [visible, setVisible] = useState(true);
+  const [status, setStatus] = useState('');
+  const [position, setPosition] = useState<PanelPositionState>({ x: PANEL_OFFSET, y: PANEL_OFFSET, manual: false });
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [accountPicker, setAccountPicker] = useState<AccountPickerState | null>(null);
+  const [accountModal, setAccountModal] = useState<{
+    open: boolean;
+    account?: AccountRecord | null;
+  }>({ open: false, account: null });
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const autoFillTokenRef = useRef('');
+  const toastTimerRef = useRef<number | null>(null);
+  const revealTimersRef = useRef<Record<string, number>>({});
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const accountPickerRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
+
+  async function loadConfig() {
+    const nextEnabled = await readExtensionEnabled();
+    setEnabled(nextEnabled);
+    if (!nextEnabled) return;
+    const config = await readAppConfig();
+    setAppConfig(config);
+    setMatched(findCurrentMatch(config));
+  }
+
+  useEffect(() => {
+    void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const onChanged = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
+      if (areaName !== 'local') return;
+      if (changes[EXTENSION_ENABLED_KEY]) {
+        const nextEnabled = changes[EXTENSION_ENABLED_KEY].newValue !== false;
+        setEnabled(nextEnabled);
+        if (nextEnabled) {
+          setVisible(true);
+          void loadConfig();
+        } else {
+          setMatched(null);
+        }
+        return;
+      }
+      if (changes[STORAGE_KEY]) {
+        void loadConfig();
+      }
+    };
+    chrome.storage?.onChanged?.addListener(onChanged);
+    return () => {
+      chrome.storage?.onChanged?.removeListener(onChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!appConfig) return;
+    const nextMatched = findCurrentMatch(appConfig);
+    setMatched(nextMatched);
+  }, [appConfig]);
+
+  useEffect(() => {
+    const root = document.getElementById('web-account-assistant-root');
+    if (!root || !appConfig) return;
+    root.className = getAppearanceClassName(appConfig.global.appearance);
+  }, [appConfig]);
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      if (!dragRef.current.dragging) return;
+      setPosition({
+        x: Math.max(8, dragRef.current.originX + (event.clientX - dragRef.current.startX)),
+        y: Math.max(8, dragRef.current.originY + (event.clientY - dragRef.current.startY)),
+        manual: true,
+      });
+    };
+    const onUp = () => {
+      dragRef.current.dragging = false;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      for (const timer of Object.values(revealTimersRef.current)) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!matched || !appConfig) return;
+    const defaultId = getDefaultAccountId(matched.env.accounts);
+    if (!defaultId) return;
+    const token = `${matched.project.id}:${matched.env.id}:${defaultId}:${location.href}`;
+    if (autoFillTokenRef.current === token) return;
+    autoFillTokenRef.current = token;
+    const account = matched.env.accounts.find((item) => item.id === defaultId);
+    if (account) {
+      void fillMatchedAccount(matched, account).catch((error: Error) => setStatus(error.message));
+    }
+  }, [appConfig, matched]);
+
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (!matched || !appConfig?.global.showAccountPickerOnInputClick) {
+        setAccountPicker(null);
+        return;
+      }
+      if (accountPickerRef.current?.contains(event.target as Node)) return;
+      if (!isConfiguredInputTarget(event.target, matched)) {
+        setAccountPicker(null);
+        return;
+      }
+      setAccountPicker({ x: event.clientX, y: event.clientY, selectedIndex: 0 });
+    };
+    document.addEventListener('click', onClick);
+    return () => {
+      document.removeEventListener('click', onClick);
+    };
+  }, [appConfig?.global.showAccountPickerOnInputClick, matched]);
+
+  useEffect(() => {
+    if (!accountPicker || !matched) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const accounts = [...matched.env.accounts].sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+      if (event.key === 'Escape') {
+        setAccountPicker(null);
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+      event.preventDefault();
+      if (accounts.length === 0) return;
+      if (event.key === 'ArrowDown') {
+        setAccountPicker((prev) => (prev ? { ...prev, selectedIndex: Math.min(accounts.length - 1, prev.selectedIndex + 1) } : prev));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        setAccountPicker((prev) => (prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : prev));
+        return;
+      }
+      const account = accounts[accountPicker.selectedIndex] ?? accounts[0];
+      void pickAccount(account);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [accountPicker, matched]);
+
+  useEffect(() => {
+    const onMessage = (
+      message: { type?: string; accountId?: string },
+      _sender: unknown,
+      sendResponse: (response: unknown) => void,
+    ) => {
+      if (message?.type !== 'WAA_FILL_ACCOUNT' && message?.type !== 'WAA_OPEN_ACCOUNT_EDITOR') return false;
+      readAppConfig()
+        .then((config) => {
+          const nextMatched = findCurrentMatch(config);
+          setAppConfig(config);
+          setMatched(nextMatched);
+          if (!nextMatched) {
+            sendResponse({ ok: false, error: '未识别此页面' });
+            return;
+          }
+          if (message.type === 'WAA_OPEN_ACCOUNT_EDITOR') {
+            const nextAccount = message.accountId ? nextMatched.env.accounts.find((item) => item.id === message.accountId) : null;
+            if (message.accountId && !nextAccount) {
+              sendResponse({ ok: false, error: '未找到账号' });
+              return;
+            }
+            setVisible(true);
+            setAccountModal({ open: true, account: nextAccount ?? null });
+            sendResponse({ ok: true });
+            return;
+          }
+          const nextAccount = nextMatched.env.accounts.find((item) => item.id === message.accountId);
+          if (!nextAccount) {
+            sendResponse({ ok: false, error: '未找到账号' });
+            return;
+          }
+          fillMatchedAccount(nextMatched, nextAccount)
+            .then(() => sendResponse({ ok: true }))
+            .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+        })
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    };
+    chrome.runtime?.onMessage?.addListener(onMessage);
+    return () => {
+      chrome.runtime?.onMessage?.removeListener(onMessage);
+    };
+  }, []);
+
+  if (!enabled || !matched || !appConfig) return null;
+
+  const config = appConfig;
+  const currentMatch = matched;
+  const project = currentMatch.project;
+  const env = currentMatch.env;
+  const showPanel = visible && appConfig.global.showLoginAccountPanel;
+  const pickerAccounts = [...env.accounts].sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+
+  async function save(nextConfig: AppConfig, nextStatus = '已保存到本地') {
+    setAppConfig(nextConfig);
+    setStatus(nextStatus);
+    await writeAppConfig(nextConfig);
+  }
+
+  async function fillAccount(account: AccountRecord, silent = false, toastTarget?: HTMLElement) {
+    try {
+      await fillMatchedAccount(currentMatch, account);
+      showPanelToast(silent ? '默认账号已尝试填充' : '已填充账号', toastTarget);
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
+  }
+
+  async function pickAccount(account: AccountRecord) {
+    setAccountPicker(null);
+    try {
+      await fillMatchedAccount(currentMatch, account);
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
+  }
+
+  async function openAccountEditor(account?: AccountRecord | null) {
+    setAccountModal({ open: true, account: account ?? null });
+  }
+
+  async function saveAccountDraft(record: AccountRecord) {
+    if (!config) return;
+    let next = saveAccount(config, project.id, env.id, record);
+    if (record.isDefault) {
+      next = setDefaultAccount(next, project.id, env.id, record.id);
+    }
+    await save(next, '账号已保存');
+    setAccountModal({ open: false, account: null });
+  }
+
+  async function deleteAccountItem(accountId: string): Promise<boolean> {
+    if (!config) return false;
+    if (!confirm('确认删除该账号？')) return false;
+    const next = removeAccount(config, project.id, env.id, accountId);
+    await save(next, '账号已删除');
+    return true;
+  }
+
+  function showToastAt(x: number, y: number, text: string, variant: ToastState['variant'] = 'success') {
+    setToast({ x, y, text, variant });
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
+  }
+
+  function showToast(target: HTMLElement, text: string, variant: ToastState['variant'] = 'success') {
+    const rect = target.getBoundingClientRect();
+    showToastAt(rect.left + rect.width / 2, rect.top - 8, text, variant);
+  }
+
+  function showPanelToast(text: string, target?: HTMLElement, variant: ToastState['variant'] = 'success') {
+    if (target) {
+      showToast(target, text, variant);
+      return;
+    }
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (rect) {
+      showToastAt(rect.left + rect.width / 2, rect.top - 8, text, variant);
+      return;
+    }
+    showToastAt(window.innerWidth / 2, 24, text, variant);
+  }
+
+  function toggleReveal(cellKey: string) {
+    setRevealed((prev) => {
+      const next = { ...prev, [cellKey]: !prev[cellKey] };
+      if (revealTimersRef.current[cellKey]) {
+        window.clearTimeout(revealTimersRef.current[cellKey]);
+        delete revealTimersRef.current[cellKey];
+      }
+      if (next[cellKey]) {
+        revealTimersRef.current[cellKey] = window.setTimeout(() => {
+          setRevealed((r) => ({ ...r, [cellKey]: false }));
+          delete revealTimersRef.current[cellKey];
+        }, 10000);
+      }
+      return next;
+    });
+  }
+
+  async function copyField(account: AccountRecord, key: string, target: HTMLElement) {
+    try {
+      await copyText(account.values[key] ?? '');
+      showToast(target, '已复制', 'success');
+    } catch (error) {
+      showToast(target, (error as Error).message, 'error');
+    }
+  }
+
+  function startDrag(event: import('react').MouseEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.parentElement?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
+    dragRef.current.dragging = true;
+    dragRef.current.startX = event.clientX;
+    dragRef.current.startY = event.clientY;
+    dragRef.current.originX = rect.left;
+    dragRef.current.originY = rect.top;
+  }
+
+  const panelStyle = {
+    position: 'fixed' as const,
+    zIndex: 2147483647,
+    width: 'max-content',
+    maxWidth: 'calc(100vw - 32px)',
+    maxHeight: 'calc(100vh - 32px)',
+    ...(position.manual ? { left: position.x, top: position.y } : getPanelAnchorStyle(project.popupPosition ?? DEFAULT_POPUP_POSITION)),
+  };
+
+  return (
+    <>
+      {showPanel ? (
+        <div className="wm-panel" ref={panelRef} style={panelStyle}>
+          <div className="wm-panel__hd" onMouseDown={startDrag} style={{ cursor: 'move' }}>
+            <div className="wm-title">
+              <strong className="wm-subtitle">{project.name} {env.name}</strong>
+              {status ? <span className="wm-tiny">{status}</span> : null}
+            </div>
+            <div className="wm-inline">
+              <button className="wm-btn wm-btn--sm" type="button" onClick={() => void openAccountEditor(null)}>
+                <Plus size={13} /> 新增
+              </button>
+              <button className="wm-icon-btn" type="button" onClick={() => setVisible(false)}>
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="wm-panel__bd" style={{ maxHeight: 'calc(100vh - 94px)', overflow: 'auto' }}>
+            <table className="wm-table wm-account-table">
+              <thead>
+                <tr>
+                  <th className="wm-default-col" aria-label="默认账号" />
+                  {currentMatch.fields.map((field) => (
+                    <th key={field.key}>
+                      <span>{field.label}</span>
+                    </th>
+                  ))}
+                  <th className="wm-actions-col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {env.accounts.map((account) => (
+                  <tr key={account.id}>
+                    <td className="wm-default-col">
+                      {account.isDefault ? <span className="wm-default-mark" title="默认账号">默</span> : <span className="wm-default-mark-slot" aria-hidden="true" />}
+                    </td>
+                    {currentMatch.fields.map((field) => {
+                      const cellKey = `${account.id}:${field.key}`;
+                      const hidden = field.sensitive && !revealed[cellKey];
+                      return (
+                        <td key={cellKey}>
+                          <div className="wm-cell">
+                            <span className="wm-code wm-cell__text">
+                              {hidden ? '••••••' : account.values[field.key] ?? ''}
+                            </span>
+                            {field.sensitive || field.copyable !== false ? (
+                              <div className="wm-cell__tools">
+                                {field.sensitive ? (
+                                  <button
+                                    className="wm-icon-btn"
+                                    type="button"
+                                    onClick={() => toggleReveal(cellKey)}
+                                  >
+                                    {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+                                  </button>
+                                ) : null}
+                                {field.copyable !== false ? (
+                                  <button className="wm-icon-btn" type="button" onClick={(event) => void copyField(account, field.key, event.currentTarget)}>
+                                    <Copy size={13} />
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td>
+                      <div className="wm-table__actions">
+                        <button className="wm-btn" type="button" onClick={(event) => void fillAccount(account, false, event.currentTarget)}>
+                          填充
+                        </button>
+                        <button className="wm-btn" type="button" onClick={() => void openAccountEditor(account)}>
+                          <Pencil size={13} /> 编辑
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      <AccountEditorModal
+        open={accountModal.open}
+        project={project}
+        account={accountModal.account ?? null}
+        title={accountModal.account ? '编辑账号' : '新增账号'}
+        onClose={() => setAccountModal({ open: false, account: null })}
+        onSave={(record) => void saveAccountDraft(record)}
+        onDelete={
+          accountModal.account
+            ? (account) => {
+                void deleteAccountItem(account.id).then((deleted) => {
+                  if (deleted) setAccountModal({ open: false, account: null });
+                });
+              }
+            : undefined
+        }
+      />
+      {accountPicker && appConfig.global.showAccountPickerOnInputClick ? (
+        <div
+          className="wm-account-picker"
+          ref={accountPickerRef}
+          style={{ left: accountPicker.x, top: accountPicker.y }}
+          onMouseLeave={() => setAccountPicker(null)}
+        >
+          {pickerAccounts.length > 0 ? (
+            pickerAccounts.map((account, index) => (
+              <button
+                className={`wm-account-picker__item ${accountPicker.selectedIndex === index ? 'wm-account-picker__item--active' : ''}`}
+                type="button"
+                key={account.id}
+                onMouseEnter={() => setAccountPicker((prev) => (prev ? { ...prev, selectedIndex: index } : prev))}
+                onClick={() => void pickAccount(account)}
+              >
+                {account.isDefault ? <span className="wm-default-mark" title="默认账号">默</span> : <span className="wm-default-mark-slot" aria-hidden="true" />}
+                <span className="wm-account-picker__text">{accountInfoText(currentMatch, account)}</span>
+              </button>
+            ))
+          ) : (
+            <div className="wm-account-picker__empty">暂无账号</div>
+          )}
+        </div>
+      ) : null}
+      {toast ? (
+        <div className={`wm-toast wm-toast--${toast.variant}`} style={{ left: toast.x, top: toast.y }}>
+          {toast.text}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+async function start() {
+  if (document.getElementById('web-account-assistant-root')) return;
+  injectStylesheet();
+  // Keep all injected UI under a single stable root so page-guard, scoped CSS and
+  // host-page cleanup can reason about one DOM boundary.
+  const host = document.createElement('div');
+  host.id = 'web-account-assistant-root';
+  (document.body ?? document.documentElement).appendChild(host);
+  createRoot(host).render(<Panel />);
+}
+
+void start();

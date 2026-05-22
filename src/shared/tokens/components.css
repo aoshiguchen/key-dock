@@ -1,0 +1,31 @@
+@import './semantic.css';
+
+.wm-theme-tech-dark {
+  --c-btn-primary-color: #07111e;
+  --c-btn-primary-shadow: 0 2px 10px rgba(56, 182, 255, 0.35);
+  --c-btn-primary-hover-shadow: 0 4px 18px rgba(56, 182, 255, 0.45);
+  --c-btn-success-color: #07111e;
+  --c-segmented-active-color: #07111e;
+  --c-modal-border: rgba(56, 182, 255, 0.15);
+  --c-modal-shadow: var(--shadow), 0 0 24px rgba(56, 182, 255, 0.08);
+  --c-panel-hd-bg: color-mix(in srgb, var(--panel), var(--bg) 40%);
+  --c-panel-shadow: var(--shadow), 0 0 1px rgba(56, 182, 255, 0.08);
+  --c-card-shadow: 0 0 1px rgba(56, 182, 255, 0.06);
+  --c-input-focus-shadow: 0 0 0 3px rgba(56, 182, 255, 0.18), 0 0 8px rgba(56, 182, 255, 0.12);
+}
+
+.wm-theme-vivid-color {
+  --c-btn-primary-bg: linear-gradient(135deg, #6d28d9, #a855f7);
+  --c-btn-primary-hover-bg: linear-gradient(135deg, #7c3aed, #c084fc);
+  --c-btn-success-bg: linear-gradient(135deg, #db2777, #f472b6);
+  --c-modal-shadow: 0 8px 32px rgba(109, 40, 217, 0.16), 0 0 0 1px rgba(109, 40, 217, 0.08);
+  --c-panel-hd-bg: linear-gradient(90deg, #f5f0ff, #fce7f3);
+  --c-segmented-active-bg: linear-gradient(135deg, #6d28d9, #a855f7);
+  --c-toggle-on-bg: linear-gradient(135deg, #6d28d9, #db2777);
+  --c-item-active-bg: linear-gradient(135deg, color-mix(in srgb, #6d28d9, var(--panel) 90%), color-mix(in srgb, #db2777, var(--panel) 92%));
+}
+
+.wm-theme-minimal-light {
+  --c-panel-shadow: 0 1px 3px rgba(16, 24, 48, 0.06), 0 4px 16px rgba(16, 24, 48, 0.08);
+  --c-modal-shadow: 0 4px 24px rgba(16, 24, 48, 0.12), 0 1px 4px rgba(16, 24, 48, 0.06);
+}

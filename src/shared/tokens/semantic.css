@@ -1,0 +1,97 @@
+@import './primitives.css';
+
+:root {
+  color-scheme: light;
+  --bg: #f0f4fa;
+  --panel: #ffffff;
+  --line: #dce3ed;
+  --text: #0f1f33;
+  --muted: #5a6a82;
+  --accent: #1764d8;
+  --accent-2: #0d8f52;
+  --danger: #c8303a;
+  --shadow: 0 4px 16px rgba(16, 24, 48, 0.1), 0 1px 4px rgba(16, 24, 48, 0.06);
+  --overlay: rgba(15, 31, 51, 0.5);
+  --font-size: 13px;
+  --row-height: 40px;
+  --control-radius: 6px;
+  --panel-radius: 10px;
+  --motion-duration: 160ms;
+}
+
+.wm-theme-minimal-light {
+  color-scheme: light;
+  --bg: #f0f4fa;
+  --panel: #ffffff;
+  --line: #dce3ed;
+  --text: #0f1f33;
+  --muted: #5a6a82;
+  --accent: #1764d8;
+  --accent-2: #0d8f52;
+  --danger: #c8303a;
+  --shadow: 0 4px 16px rgba(16, 24, 48, 0.1), 0 1px 4px rgba(16, 24, 48, 0.06);
+  --overlay: rgba(15, 31, 51, 0.5);
+  --row-height: 40px;
+  --control-radius: 6px;
+  --panel-radius: 10px;
+}
+
+.wm-theme-tech-dark {
+  color-scheme: dark;
+  --bg: #070b11;
+  --panel: #0d1420;
+  --panel-2: #111a28;
+  --line: #1e2d42;
+  --text: #dde6f5;
+  --muted: #7a90aa;
+  --accent: #38b6ff;
+  --accent-2: #1ce8a0;
+  --danger: #ff4d5e;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(56, 182, 255, 0.06);
+  --glow: 0 0 12px rgba(56, 182, 255, 0.22);
+  --overlay: rgba(0, 0, 0, 0.7);
+  --row-height: 34px;
+  --control-radius: 4px;
+  --panel-radius: 6px;
+}
+
+.wm-theme-vivid-color {
+  color-scheme: light;
+  --bg: #f2eeff;
+  --panel: #ffffff;
+  --line: #cdc6f0;
+  --text: #1a1840;
+  --muted: #5e5880;
+  --accent: #6d28d9;
+  --accent-2: #db2777;
+  --danger: #dc2626;
+  --shadow: 0 6px 24px rgba(109, 40, 217, 0.18), 0 1px 4px rgba(109, 40, 217, 0.08);
+  --overlay: rgba(26, 24, 64, 0.5);
+  --row-height: 36px;
+  --control-radius: 10px;
+  --panel-radius: 12px;
+}
+
+.wm-font-small {
+  --font-size: 12px;
+}
+
+.wm-font-medium {
+  --font-size: 13px;
+}
+
+.wm-font-large {
+  --font-size: 15px;
+}
+
+.wm-motion-off,
+.wm-motion-off * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
+}
