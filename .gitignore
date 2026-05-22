@@ -4,3 +4,9 @@ dist
 *.log
 .vite
 .tsbuild-node
+
+.ai
+.my
+CLAUDE.MD
+AGENTS.MD
+AI.MD
