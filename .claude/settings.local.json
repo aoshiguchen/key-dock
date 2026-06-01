@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/yangwen/my/work/AI/WebAccountAssistant/requirements/v0.4/**)",
+      "Read(//Users/yangwen/my/work/AI/WebAccountAssistant/requirements/**)",
+      "Read(//Users/yangwen/my/work/AI/WebAccountAssistant/**)"
+    ]
+  }
+}
