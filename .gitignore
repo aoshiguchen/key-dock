@@ -5,6 +5,7 @@ dist
 .vite
 .tsbuild-node
 
+.claude
 .idea
 .ai
 .my
