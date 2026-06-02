@@ -223,11 +223,14 @@ button {
 }
 
 .wm-popup__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
   padding: 6px 2px 2px;
   color: var(--muted);
   font-size: 12px;
   text-align: center;
-  white-space: nowrap;
 }
 
 .wm-popup__link {

@@ -5,6 +5,8 @@ export const APP_INFO = {
   version: '1.0.0',
   description: '多环境 Web 账号管理与登录填充 Chrome 插件。',
   homepageUrl: 'https://keydock.asgc.fun',
+  githubUrl: 'https://github.com/aoshiguchen/key-dock',
+  giteeUrl: 'https://gitee.com/asgc/key-dock',
 } as const;
 
 export function getAppDisplayTitle(): string {

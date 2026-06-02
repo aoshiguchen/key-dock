@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChevronDown, ChevronRight, Pencil, Plus } from 'lucide-react';
 import { APP_INFO } from '../shared/app-info';
-import { PRODUCT_LINK } from '../shared/constants';
+import { PRODUCT_LINK, REPO_LINKS } from '../shared/constants';
 import { readExtensionEnabled, writeExtensionEnabled } from '../shared/extension-state';
 import { matchCurrentPage } from '../shared/match';
 import { readAppConfig } from '../shared/storage';
@@ -193,6 +193,11 @@ function Popup() {
           <a className="wm-popup__link" href={PRODUCT_LINK.url} target="_blank" rel="noopener noreferrer">
             {PRODUCT_LINK.label}
           </a>
+          {REPO_LINKS.map((link) => (
+            <a key={link.url} className="wm-popup__link" href={link.url} target="_blank" rel="noopener noreferrer">
+              {link.label}
+            </a>
+          ))}
         </div>
       </main>
     </div>

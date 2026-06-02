@@ -1,5 +1,5 @@
 import { APP_INFO } from '../../shared/app-info';
-import { PRODUCT_LINK } from '../../shared/constants';
+import { PRODUCT_LINK, REPO_LINKS } from '../../shared/constants';
 import { THEME_OPTIONS, FONT_SCALE_OPTIONS } from '../../shared/theme';
 import type { AppConfig } from '../../shared/types';
 
@@ -47,6 +47,11 @@ export function GlobalSection({ config, persist }: GlobalSectionProps) {
                 <a href={PRODUCT_LINK.url} target="_blank" rel="noopener noreferrer">
                   {PRODUCT_LINK.label}
                 </a>
+                {REPO_LINKS.map((link) => (
+                  <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">
+                    {link.label}
+                  </a>
+                ))}
               </div>
             </div>
           </div>
