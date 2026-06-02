@@ -38,6 +38,15 @@ function waitAndPatchCrypto(): void {
 function installCryptoGuard(): void {
   if (!shouldGuardPage()) return;
 
+  // 跨实例加固：同一扩展可能存在两份实例（商店版 + 本地开发版），均在 MAIN world 运行。
+  // 若已有实例安装过 CryptoJS 访问器守卫，本实例只需确保补丁在位，不再二次 defineProperty，
+  // 避免覆盖另一实例已注册的 getter/setter。
+  if ((window as any).__webAccountAssistantCryptoGuard) {
+    patchCryptoDecrypt((window as any).CryptoJS);
+    return;
+  }
+  (window as any).__webAccountAssistantCryptoGuard = true;
+
   const current = (window as any).CryptoJS;
   if (current) {
     if (patchCryptoDecrypt(current)) return;

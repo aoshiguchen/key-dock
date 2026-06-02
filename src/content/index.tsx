@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
 import type { CSSProperties } from 'react';
 import { Copy, Eye, EyeOff, Pencil, Plus, X } from 'lucide-react';
 import rawPrimitives from '../shared/tokens/primitives.css';
@@ -610,7 +611,15 @@ function Panel() {
   );
 }
 
-async function start() {
+// 模块级挂载控制器：把「挂载/卸载」决策上移到启用开关，使「启用开关」成为页面注入的总闸。
+// 同一扩展可能存在两份实例（Chrome 商店正式版 + 本地开发版），二者都向 <all_urls> 注入并
+// 争抢同一份页面共享资源（根节点 id、样式节点）。被关闭的实例必须彻底释放这些资源，
+// 启用着的另一份实例下次页面加载时才能正常占用并工作。
+let panelRoot: Root | null = null;
+let panelHost: HTMLElement | null = null;
+
+function mountPanel() {
+  // 根节点已被（本实例或另一实例）占用则不重复挂载。
   if (document.getElementById('web-account-assistant-root')) return;
   injectStylesheet();
   // Keep all injected UI under a single stable root so page-guard, scoped CSS and
@@ -618,7 +627,40 @@ async function start() {
   const host = document.createElement('div');
   host.id = 'web-account-assistant-root';
   (document.body ?? document.documentElement).appendChild(host);
-  createRoot(host).render(<Panel />);
+  panelHost = host;
+  panelRoot = createRoot(host);
+  panelRoot.render(<Panel />);
 }
 
-void start();
+function unmountPanel() {
+  // 释放共享资源：卸载 React、移除根节点与样式节点，让另一份启用实例能够接管。
+  if (panelRoot) {
+    panelRoot.unmount();
+    panelRoot = null;
+  }
+  if (panelHost?.parentNode) {
+    panelHost.parentNode.removeChild(panelHost);
+  }
+  panelHost = null;
+  document.getElementById('web-account-assistant-style')?.remove();
+}
+
+async function syncEnabledState() {
+  const enabled = await readExtensionEnabled();
+  if (enabled) {
+    mountPanel();
+  } else {
+    unmountPanel();
+  }
+}
+
+// 同会话内开关「启用」时即时卸载/挂载自身（释放或重新占用根节点）。
+chrome.storage?.onChanged?.addListener((changes: Record<string, unknown>, areaName: string) => {
+  if (areaName !== 'local') return;
+  if (changes[EXTENSION_ENABLED_KEY]) {
+    void syncEnabledState();
+  }
+});
+
+// 启动入口：禁用的实例从一开始就不创建根节点，启用的实例正常占用。
+void syncEnabledState();
