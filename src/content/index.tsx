@@ -558,6 +558,10 @@ function Panel() {
       <AccountEditorModal
         open={accountModal.open}
         project={project}
+        projects={[project]}
+        projectId={project.id}
+        envId={env.id}
+        lockContext
         account={accountModal.account ?? null}
         title={accountModal.account ? '编辑账号' : '新增账号'}
         onClose={() => setAccountModal({ open: false, account: null })}

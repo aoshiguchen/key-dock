@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { AccountEditorModal } from '../../shared/AccountEditorModal';
 import { saveAccount, removeAccount } from '../../shared/config-ops';
+import { DEFAULT_PROJECT_GROUP_CODE } from '../../shared/defaults';
 import { accountInfoText, accountSearchText, type ToastVariant } from '../helpers';
 import type { AccountRecord, AppConfig, EnvConfig, ProjectConfig } from '../../shared/types';
 
@@ -12,6 +13,7 @@ type AccountsSectionProps = {
 };
 
 export function AccountsSection({ config, persist }: AccountsSectionProps) {
+  const [selectedAccountGroupCode, setSelectedAccountGroupCode] = useState('');
   const [selectedAccountProjectId, setSelectedAccountProjectId] = useState('');
   const [selectedAccountEnvId, setSelectedAccountEnvId] = useState('');
   const [accountKeyword, setAccountKeyword] = useState('');
@@ -21,6 +23,13 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
     envId: string;
     account?: AccountRecord | null;
   }>({ open: false, projectId: '', envId: '', account: null });
+
+  const projectGroups = config.projectGroups ?? [];
+
+  function getGroupName(code: string | undefined): string {
+    const resolved = code || DEFAULT_PROJECT_GROUP_CODE;
+    return projectGroups.find((group) => group.code === resolved)?.name ?? resolved;
+  }
 
   const selectedAccountProject = useMemo(
     () => config.projects.find((item) => item.id === selectedAccountProjectId) ?? null,
@@ -44,6 +53,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
   const accountRows = useMemo(() => {
     const rows: Array<{ project: ProjectConfig; env: EnvConfig; account: AccountRecord }> = [];
     for (const project of config.projects) {
+      if (selectedAccountGroupCode && (project.groupCode ?? DEFAULT_PROJECT_GROUP_CODE) !== selectedAccountGroupCode) continue;
       if (selectedAccountProjectId && project.id !== selectedAccountProjectId) continue;
       for (const env of project.envs) {
         if (selectedAccountEnvId && env.id !== selectedAccountEnvId) continue;
@@ -58,7 +68,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
       }
     }
     return rows;
-  }, [accountKeyword, config, selectedAccountEnvId, selectedAccountProjectId]);
+  }, [accountKeyword, config, selectedAccountEnvId, selectedAccountGroupCode, selectedAccountProjectId]);
 
   async function saveAccountDraft(record: AccountRecord) {
     if (!accountModal.projectId || !accountModal.envId) return;
@@ -98,6 +108,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
                 className="wm-btn"
                 type="button"
                 onClick={() => {
+                  setSelectedAccountGroupCode('');
                   setSelectedAccountProjectId('');
                   setSelectedAccountEnvId('');
                   setAccountKeyword('');
@@ -120,7 +131,25 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
             </div>
           </div>
           <div className="wm-card__bd">
-            <div className="wm-grid wm-grid--3">
+            <div className="wm-grid wm-grid--4">
+              <label className="wm-field">
+                <span>项目分组</span>
+                <select
+                  value={selectedAccountGroupCode}
+                  onChange={(event) => {
+                    setSelectedAccountGroupCode(event.target.value);
+                    setSelectedAccountProjectId('');
+                    setSelectedAccountEnvId('');
+                  }}
+                >
+                  <option value="">全部</option>
+                  {projectGroups.map((group) => (
+                    <option key={group.code} value={group.code}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="wm-field">
                 <span>项目</span>
                 <select
@@ -131,11 +160,17 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
                   }}
                 >
                   <option value="">全部</option>
-                  {config.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
+                  {config.projects
+                    .filter(
+                      (project) =>
+                        !selectedAccountGroupCode ||
+                        (project.groupCode ?? DEFAULT_PROJECT_GROUP_CODE) === selectedAccountGroupCode,
+                    )
+                    .map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label className="wm-field">
@@ -171,6 +206,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
               <table className="wm-table">
                 <thead>
                   <tr>
+                    <th>项目分组</th>
                     <th>项目</th>
                     <th>环境</th>
                     <th>账号信息</th>
@@ -181,6 +217,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
                 <tbody>
                   {accountRows.map(({ project, env, account }) => (
                     <tr key={`${project.id}-${env.id}-${account.id}`}>
+                      <td>{getGroupName(project.groupCode)}</td>
                       <td>{project.name}</td>
                       <td>{env.name}</td>
                       <td>

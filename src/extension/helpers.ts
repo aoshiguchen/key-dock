@@ -76,17 +76,7 @@ export function createBlankProject(): ProjectConfig {
         hosts: ['example.com'],
         pathKeywords: ['/login'],
         retryDelays: [0, 500],
-        accounts: [
-          {
-            id: createId('account'),
-            values: {
-              login: '',
-              note: '',
-            },
-            isDefault: true,
-            updatedAt: new Date().toISOString(),
-          },
-        ],
+        accounts: [],
       },
     ],
   };

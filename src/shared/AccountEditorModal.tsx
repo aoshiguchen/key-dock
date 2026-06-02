@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, Trash2, X } from 'lucide-react';
 import { createAccountDraft } from './account-utils';
 import { createId } from './id';
 import type { AccountRecord, ProjectConfig } from './types';
@@ -14,6 +14,7 @@ type Props = {
   envId?: string;
   account?: AccountRecord | null;
   title: string;
+  lockContext?: boolean;
   onClose: () => void;
   onSave: (record: AccountRecord) => void;
   onDelete?: (account: AccountRecord) => void;
@@ -29,6 +30,7 @@ export function AccountEditorModal({
   envId,
   account,
   title,
+  lockContext,
   onClose,
   onSave,
   onDelete,
@@ -42,6 +44,7 @@ export function AccountEditorModal({
 
   const [draft, setDraft] = useState<AccountRecord | null>(initialDraft);
   const [requiredErrors, setRequiredErrors] = useState<Record<string, boolean>>({});
+  const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [titleId] = useState(() => `wm-account-modal-title-${++accountModalIdCounter}`);
@@ -71,6 +74,7 @@ export function AccountEditorModal({
     if (!open || !project) return;
     setDraft(createAccountDraft(project, account ?? undefined));
     setRequiredErrors({});
+    setRevealedFields({});
   }, [account, open, project]);
 
   useEffect(() => {
@@ -95,7 +99,7 @@ export function AccountEditorModal({
   const selectedProjectId = projectId ?? project.id;
   const selectedProject = projectOptions.find((item) => item.id === selectedProjectId) ?? project;
   const selectedEnvId = envId ?? selectedProject.envs[0]?.id ?? '';
-  const editableContext = !account && projectOptions.length > 0;
+  const editableContext = !account && !lockContext && projectOptions.length > 0;
 
   function handleSave() {
     if (!project || !draft) return;
@@ -182,28 +186,42 @@ export function AccountEditorModal({
                 {field.required ? <b className="wm-required">*</b> : null}
               </span>
               <div className="wm-field__control">
-                <input
-                  type={field.sensitive ? 'password' : 'text'}
-                  className={requiredErrors[field.key] ? 'wm-input--error' : undefined}
-                  value={draft.values[field.key] ?? ''}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setDraft({
-                      ...draft,
-                      values: {
-                        ...draft.values,
-                        [field.key]: value,
-                      },
-                    });
-                    if (value.trim()) {
-                      setRequiredErrors((prev) => {
-                        const next = { ...prev };
-                        delete next[field.key];
-                        return next;
+                <div className={field.sensitive ? 'wm-input-affix' : undefined}>
+                  <input
+                    type={field.sensitive && !revealedFields[field.key] ? 'password' : 'text'}
+                    className={requiredErrors[field.key] ? 'wm-input--error' : undefined}
+                    value={draft.values[field.key] ?? ''}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setDraft({
+                        ...draft,
+                        values: {
+                          ...draft.values,
+                          [field.key]: value,
+                        },
                       });
-                    }
-                  }}
-                />
+                      if (value.trim()) {
+                        setRequiredErrors((prev) => {
+                          const next = { ...prev };
+                          delete next[field.key];
+                          return next;
+                        });
+                      }
+                    }}
+                  />
+                  {field.sensitive ? (
+                    <button
+                      className="wm-icon-btn"
+                      type="button"
+                      aria-label={revealedFields[field.key] ? '隐藏' : '显示'}
+                      onClick={() =>
+                        setRevealedFields((prev) => ({ ...prev, [field.key]: !prev[field.key] }))
+                      }
+                    >
+                      {revealedFields[field.key] ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  ) : null}
+                </div>
                 {requiredErrors[field.key] ? <small className="wm-field__error">必填</small> : null}
               </div>
             </label>

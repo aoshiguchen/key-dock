@@ -400,6 +400,10 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.wm-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .wm-list-form {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
@@ -577,6 +581,18 @@ select {
 .wm-field__control {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.wm-input-affix {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wm-input-affix input {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1096,6 +1112,7 @@ select {
   .wm-theme-grid,
   .wm-grid--2,
   .wm-grid--3,
+  .wm-grid--4,
   .wm-list-form {
     grid-template-columns: 1fr;
   }
