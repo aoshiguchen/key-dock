@@ -2,6 +2,7 @@
 // 并响应来自其它页面的配置读写消息（GET/SAVE_APP_CONFIG）。
 import { DEFAULT_CONFIG } from '../shared/defaults';
 import { ensureInitialConfig, readAppConfig, writeAppConfig } from '../shared/storage';
+import { ANALYTICS_PAGES, reportPageView } from '../shared/analytics';
 import type { AppConfig } from '../shared/types';
 
 // 本地开发版标记（方案1）：通过 management.getSelf 判断安装来源。
@@ -28,7 +29,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 // 后台消息路由：处理配置的读取与保存。返回 true 表示将异步调用 sendResponse（保持消息通道开启）。
-chrome.runtime.onMessage.addListener((message: { type?: string; appConfig?: AppConfig }, _sender: unknown, sendResponse: (response: unknown) => void) => {
+chrome.runtime.onMessage.addListener((message: { type?: string; appConfig?: AppConfig; page?: keyof typeof ANALYTICS_PAGES }, _sender: unknown, sendResponse: (response: unknown) => void) => {
   if (message?.type === 'GET_APP_CONFIG') {
     readAppConfig()
       .then((appConfig) => sendResponse({ ok: true, appConfig }))
@@ -45,6 +46,13 @@ chrome.runtime.onMessage.addListener((message: { type?: string; appConfig?: AppC
       .then(() => sendResponse({ ok: true }))
       .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
     return true;
+  }
+
+  // 内容脚本中转的百度统计 PV 上报：由后台代发 hm.gif，绕过宿主页 CSP（fire-and-forget）。
+  if (message?.type === 'TRACK_PV') {
+    const page = message.page ? ANALYTICS_PAGES[message.page] : undefined;
+    if (page) reportPageView(page);
+    return false;
   }
 
   return false;

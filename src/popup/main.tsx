@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChevronDown, ChevronRight, Pencil, Plus } from 'lucide-react';
 import { APP_INFO } from '../shared/app-info';
+import { ANALYTICS_PAGES, reportPageView } from '../shared/analytics';
 import { PRODUCT_LINK, REPO_LINKS } from '../shared/constants';
 import { readExtensionEnabled, writeExtensionEnabled } from '../shared/extension-state';
 import { matchCurrentPage } from '../shared/match';
@@ -215,3 +216,6 @@ function Popup() {
 }
 
 createRoot(document.getElementById('root')!).render(<Popup />);
+
+// 上报一次工具栏弹窗 PV（百度统计）。
+reportPageView(ANALYTICS_PAGES.popup);

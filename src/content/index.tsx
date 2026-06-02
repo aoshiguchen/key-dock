@@ -44,6 +44,20 @@ type AccountPickerState = {
 const PANEL_OFFSET = 24;
 const TOAST_DURATION_MS = 1200;
 
+// 登录页 PV 去重标志：内容脚本可能因配置变更多次重算匹配，但每次页面加载只应上报一次。
+let loginPvReported = false;
+
+/**
+ * 上报一次「登录页填充」PV（百度统计），每页仅一次。
+ * 内容脚本运行在隔离世界、直连 hm.gif 可能受宿主页 CSP 影响，故经后台 Service Worker 代发，
+ * 既绕过宿主页 CSP，也不向宿主页暴露统计请求。
+ */
+function reportLoginPageView(): void {
+  if (loginPvReported) return;
+  loginPvReported = true;
+  chrome.runtime?.sendMessage?.({ type: 'TRACK_PV', page: 'loginFill' });
+}
+
 /** 用当前页面 URL 匹配出命中的项目+环境（含字段配置与账号列表）；无匹配返回 null。 */
 function findCurrentMatch(config: AppConfig): MatchedEnvironment | null {
   return matchCurrentPage(config, window.location);
@@ -212,6 +226,11 @@ function Panel() {
     const nextMatched = findCurrentMatch(appConfig);
     setMatched(nextMatched);
   }, [appConfig]);
+
+  // 当前页面命中项目/环境（即登录填充 UI 生效）时，上报一次「登录页填充」PV。
+  useEffect(() => {
+    if (matched) reportLoginPageView();
+  }, [matched]);
 
   useEffect(() => {
     const root = document.getElementById('web-account-assistant-root');

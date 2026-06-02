@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { APP_INFO } from '../shared/app-info';
+import { ANALYTICS_PAGES, reportPageView } from '../shared/analytics';
 import { readAppConfig, writeAppConfig } from '../shared/storage';
 import { getAppearanceClassName } from '../shared/theme';
 import type { AppConfig } from '../shared/types';
@@ -99,3 +100,6 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+// 上报一次配置管理页 PV（百度统计）。
+reportPageView(ANALYTICS_PAGES.options);
