@@ -1,3 +1,4 @@
+// 配置管理页侧边栏：展示品牌信息与分区菜单，支持折叠/展开。
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { APP_INFO } from '../../shared/app-info';
 import { MENU_ITEMS, type SectionKey } from '../helpers';
@@ -9,6 +10,7 @@ type SidebarProps = {
   onToggleCollapse: () => void;
 };
 
+/** 侧边栏组件。section 为当前选中分区；collapsed 控制折叠态；回调用于切换分区与折叠状态。 */
 export function Sidebar({ section, collapsed, onSectionChange, onToggleCollapse }: SidebarProps) {
   return (
     <aside className="wm-panel wm-sidebar">

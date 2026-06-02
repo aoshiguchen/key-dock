@@ -1,11 +1,17 @@
+// 配置管理页的弹窗组件集合：通用弹窗外壳 ModalShell，以及项目编辑、字段编辑、
+// 环境编辑、导出配置等各类弹窗。各弹窗以本地草稿（draft）方式编辑，仅在保存时回调上抛。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { GripVertical, Plus, Trash2, X } from 'lucide-react';
 import { DEFAULT_POPUP_POSITION, POPUP_POSITION_OPTIONS } from '../shared/popup-position';
 import type { EnvConfig, FieldConfig, FieldTemplate, ProjectConfig, ProjectGroup, SyncConfig } from '../shared/types';
 
+// 用于为每个弹窗生成唯一的 title id（aria-labelledby），保证无障碍标注互不冲突。
 let modalIdCounter = 0;
 
+// 环境编辑的草稿类型：在 EnvConfig 基础上额外保存几个「文本态」字段，
+// 让 hosts/pathKeywords/retryDelays 这类数组能以逗号分隔字符串的形式直接编辑，
+// 保存时再解析回数组（见 parseListText / parseRetryText）。
 type EnvDraft = EnvConfig & {
   hostsText: string;
   pathKeywordsText: string;
@@ -22,11 +28,17 @@ type ModalProps = {
   footer?: ReactNode;
 };
 
+/**
+ * 通用弹窗外壳：提供遮罩、标题栏、关闭按钮、可选底部操作区，并处理无障碍与键盘交互。
+ * 支持 modal（居中）与 drawer（抽屉）两种展示模式。内容与底部按钮由调用方传入。
+ */
 function ModalShell({ open, title, width = 900, mode = 'modal', onClose, children, footer }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // 记录弹窗打开前的焦点元素（触发者），关闭时把焦点归还回去。
   const triggerRef = useRef<HTMLElement | null>(null);
   const [titleId] = useState(() => `wm-modal-title-${++modalIdCounter}`);
 
+  // 焦点陷阱：Tab/Shift+Tab 在弹窗内部循环，避免焦点跑到弹窗外的页面元素上。
   const trapFocus = useCallback((event: KeyboardEvent) => {
     if (event.key !== 'Tab' || !dialogRef.current) return;
     const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
@@ -36,11 +48,13 @@ function ModalShell({ open, title, width = 900, mode = 'modal', onClose, childre
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (event.shiftKey) {
+      // Shift+Tab 在第一个可聚焦元素上时，回卷到最后一个。
       if (document.activeElement === first) {
         event.preventDefault();
         last.focus();
       }
     } else {
+      // Tab 在最后一个可聚焦元素上时，循环回到第一个。
       if (document.activeElement === last) {
         event.preventDefault();
         first.focus();
@@ -50,7 +64,9 @@ function ModalShell({ open, title, width = 900, mode = 'modal', onClose, childre
 
   useEffect(() => {
     if (!open) return;
+    // 记录触发弹窗时的焦点元素，便于卸载时归还。
     triggerRef.current = document.activeElement as HTMLElement;
+    // 延迟到下一轮事件循环再聚焦，确保弹窗 DOM 已挂载。
     const timer = setTimeout(() => {
       const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -61,6 +77,7 @@ function ModalShell({ open, title, width = 900, mode = 'modal', onClose, childre
     return () => {
       clearTimeout(timer);
       document.removeEventListener('keydown', trapFocus);
+      // 弹窗关闭/卸载时把焦点还给打开它的元素。
       triggerRef.current?.focus();
     };
   }, [open, trapFocus]);
@@ -89,10 +106,12 @@ function ModalShell({ open, title, width = 900, mode = 'modal', onClose, childre
   );
 }
 
+// 通过 JSON 序列化做深拷贝，确保草稿与原配置完全隔离，编辑过程不污染源对象。
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
 
+// 将数组中下标 from 的元素移动到下标 to（用于字段拖动排序），返回新数组不改原数组。
 function moveItem<T>(items: T[], from: number, to: number): T[] {
   const next = [...items];
   const [item] = next.splice(from, 1);
@@ -100,6 +119,7 @@ function moveItem<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+// 以下四个辅助函数负责「数组 <-> 逗号分隔文本」互转，配合 EnvDraft 的文本态字段使用。
 function toRetryText(delays: number[]): string {
   return delays.join(', ');
 }
@@ -108,6 +128,7 @@ function toListText(values: string[]): string {
   return values.join(', ');
 }
 
+// 解析逗号分隔文本为字符串数组：去首尾空格并过滤空项。
 function parseListText(text: string): string[] {
   return text
     .split(',')
@@ -115,6 +136,7 @@ function parseListText(text: string): string[] {
     .filter(Boolean);
 }
 
+// 解析逗号分隔文本为数字数组：转数字并过滤掉非有限值（如空串/非数字）。
 function parseRetryText(text: string): number[] {
   return text
     .split(',')
@@ -122,6 +144,11 @@ function parseRetryText(text: string): number[] {
     .filter((value) => Number.isFinite(value));
 }
 
+/**
+ * 项目基础信息编辑弹窗：编辑项目 ID、名称、所属分组、登录页弹窗位置等。
+ * 选择「字段配置模板」会用模板字段覆盖草稿的 fields。
+ * project 为 null 时不展示；保存时通过 onSave 上抛完整 ProjectConfig。
+ */
 export function ProjectEditorModal({
   open,
   project,
@@ -142,14 +169,17 @@ export function ProjectEditorModal({
   onSave: (next: ProjectConfig) => void;
 }) {
   const [draft, setDraft] = useState<ProjectConfig | null>(project);
+  // 当前选中的字段模板 id；空串表示不套用模板。
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
+  // 每次打开时用传入的 project 重新初始化草稿（深拷贝隔离），并清空模板选择。
   useEffect(() => {
     if (!open || !project) return;
     setDraft(clone(project));
     setSelectedTemplateId('');
   }, [open, project]);
 
+  // 校验：项目 ID 与名称均非空白才允许保存。
   const canSave = Boolean(draft?.id.trim() && draft?.name.trim());
 
   return (
@@ -170,6 +200,7 @@ export function ProjectEditorModal({
             disabled={!canSave}
             onClick={() => {
               if (!draft) return;
+              // 兜底保证 fields/envs 为数组，避免上层拿到 undefined。
               onSave({ ...draft, fields: draft.fields ?? [], envs: draft.envs ?? [] });
             }}
           >
@@ -205,6 +236,7 @@ export function ProjectEditorModal({
               onChange={(event) => {
                 const templateId = event.target.value;
                 setSelectedTemplateId(templateId);
+                // 选中模板后，直接用模板字段（深拷贝）覆盖当前草稿的 fields。
                 const template = fieldTemplates.find((item) => item.id === templateId);
                 if (template) {
                   setDraft({ ...draft, fields: clone(template.fields) });
@@ -238,6 +270,12 @@ export function ProjectEditorModal({
   );
 }
 
+/**
+ * 项目字段配置弹窗：以表格形式增删改字段并支持拖动排序。
+ * 每行可编辑 key/名称/类型（input 或 display）/选择器/敏感/必填/宽度等；
+ * display 类型不填充页面，故清空并禁用选择器输入。
+ * showCopyable 控制是否展示「复制」列（默认展示）。保存时通过 onSave 上抛字段数组。
+ */
 export function ProjectFieldsModal({
   open,
   project,
@@ -254,8 +292,10 @@ export function ProjectFieldsModal({
   onSave: (nextFields: FieldConfig[]) => void;
 }) {
   const [draft, setDraft] = useState<FieldConfig[]>([]);
+  // 拖动排序时记录被拖起行的下标；拖放完成后置回 null。
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
+  // 打开时用项目现有字段初始化草稿（深拷贝隔离）。
   useEffect(() => {
     if (!open || !project) return;
     setDraft(clone(project.fields));
@@ -292,6 +332,7 @@ export function ProjectFieldsModal({
             setDraft((prev) => [
               ...prev,
               {
+                // 用时间戳生成默认唯一 key，避免与既有字段冲突。
                 key: `field_${Date.now()}`,
                 label: '新字段',
                 type: 'input',
@@ -332,6 +373,7 @@ export function ProjectFieldsModal({
               onDragStart={() => setDragIndex(index)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => {
+                // 拖放到自身或无拖起行时忽略；否则把拖起行移动到当前行位置。
                 if (dragIndex === null || dragIndex === index) return;
                 setDraft((prev) => moveItem(prev, dragIndex, index));
                 setDragIndex(null);
@@ -363,6 +405,7 @@ export function ProjectFieldsModal({
                       prev.map((item, i) => {
                         if (i !== index) return item;
                         const type = event.target.value as FieldConfig['type'];
+                        // 切换为 display（仅展示）时清空选择器，因为该类型不填充页面。
                         return type === 'display' ? { ...item, type, selector: '' } : { ...item, type };
                       }),
                     )
@@ -450,6 +493,11 @@ export function ProjectFieldsModal({
   );
 }
 
+/**
+ * 项目环境配置弹窗：以卡片形式增删改环境。每个环境含 ID、名称、Hosts、Path 关键字、重试延迟。
+ * 编辑期间 hosts/pathKeywords/retryDelays 以逗号分隔文本（*Text 字段）呈现，
+ * 保存时再解析回数组结构（见 onSave 中的映射），accounts 原样保留。
+ */
 export function ProjectEnvsModal({
   open,
   project,
@@ -465,6 +513,7 @@ export function ProjectEnvsModal({
 }) {
   const [draft, setDraft] = useState<EnvDraft[]>([]);
 
+  // 打开时将环境数组转为草稿：把数组型字段拍平成逗号分隔文本，便于直接编辑。
   useEffect(() => {
     if (!open || !project) return;
     setDraft(
@@ -495,6 +544,7 @@ export function ProjectEnvsModal({
               className="wm-btn wm-btn--primary"
               onClick={() =>
                 onSave(
+                  // 保存时把文本态字段解析回数组，只回传 EnvConfig 结构（剔除 *Text 草稿字段）。
                   clone(draft).map((env) => ({
                     id: env.id,
                     name: env.name,
@@ -523,6 +573,7 @@ export function ProjectEnvsModal({
             setDraft((prev) => [
               ...prev,
               {
+                // 新增环境时用时间戳生成默认 ID，并同步初始化数组字段与其文本态。
                 id: `env_${Date.now()}`,
                 name: '新环境',
                 hosts: ['example.com'],
@@ -624,6 +675,11 @@ export function ProjectEnvsModal({
   );
 }
 
+/**
+ * 导出配置弹窗：勾选要导出的项目，并决定是否一并导出 MinIO 同步配置与主题设置。
+ * 仅当当前存在 MinIO 相关配置时才显示「导出 MinIO 配置」选项。
+ * 选项通过 onExport 上抛（projectIds / includeMinio / includeAppearance）。
+ */
 export function ExportConfigModal({
   open,
   config,
@@ -639,6 +695,7 @@ export function ExportConfigModal({
   const [includeMinio, setIncludeMinio] = useState(false);
   const [includeAppearance, setIncludeAppearance] = useState(true);
 
+  // 打开时初始化：默认全选所有项目；当已配置任一 MinIO 相关项时默认勾选导出 MinIO；主题默认导出。
   useEffect(() => {
     if (!open) return;
     const ids = config.projects.map((item) => item.id);
@@ -647,6 +704,7 @@ export function ExportConfigModal({
     setIncludeAppearance(true);
   }, [config, open]);
 
+  // 是否存在 MinIO 配置（任一关键字段有值即视为存在），用于决定是否展示对应导出选项。
   const hasMinio = Boolean(config.sync.minioEnabled || config.sync.endpoint || config.sync.bucket || config.sync.accessKey || config.sync.secretKey);
 
   return (

@@ -1,8 +1,10 @@
+// 配置严格校验：在导入/保存边界对完整配置树做结构与约束检查，防止非法 JSON 覆盖本地良好配置。
 import { DEFAULT_PROJECT_GROUP_CODE, SCHEMA_VERSION } from './defaults';
 import { isPopupPosition } from './popup-position';
 import { isFontScale, isThemeMode } from './theme';
 import type { AppConfig, FieldConfig, ProjectConfig, EnvConfig, AccountRecord, ProjectGroup, FieldTemplate } from './types';
 
+/** 单条校验错误：path 指向出错位置，message 为中文提示。 */
 export type ValidationError = {
   path: string;
   message: string;
@@ -12,6 +14,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** 数组元素是否互不相同（用于校验各类 id/key 唯一性）。 */
 function unique<T>(values: T[]): boolean {
   return new Set(values).size === values.length;
 }
@@ -73,6 +76,7 @@ function validateEnv(env: EnvConfig, fields: FieldConfig[], path: string): Valid
   if (!env.name.trim()) errors.push({ path, message: '环境名称不能为空' });
   if (!Array.isArray(env.hosts) || env.hosts.length === 0) errors.push({ path, message: '环境 hosts 不能为空' });
   if (!Array.isArray(env.pathKeywords) || env.pathKeywords.length === 0) errors.push({ path, message: '环境 pathKeywords 不能为空' });
+  // 默认账号至多一个。
   const defaultAccounts = env.accounts.filter((item) => item.isDefault);
   if (defaultAccounts.length > 1) errors.push({ path, message: '同一环境最多允许一个默认账号' });
   if (!Array.isArray(env.accounts) || env.accounts.length === 0) {
@@ -138,14 +142,14 @@ function validateGlobalConfig(global: AppConfig['global']): ValidationError[] {
   return errors;
 }
 
+/** 校验完整配置，返回是否通过、错误列表及原值（不抛错）。 */
 export function validateAppConfig(input: unknown): { ok: boolean; errors: ValidationError[]; value?: AppConfig } {
   if (!isPlainObject(input)) {
     return { ok: false, errors: [{ path: '', message: '配置必须是对象' }] };
   }
   const value = input as AppConfig;
   const errors: ValidationError[] = [];
-  // Validation stays strict at import/save boundaries so malformed JSON cannot
-  // overwrite the last known-good local configuration.
+  // 在导入/保存边界保持严格校验，确保畸形 JSON 不会覆盖上一次已知良好的本地配置。
   if (value.schemaVersion !== SCHEMA_VERSION) {
     errors.push({ path: 'schemaVersion', message: `仅支持 schemaVersion=${SCHEMA_VERSION}` });
   }
@@ -180,6 +184,7 @@ export function validateAppConfig(input: unknown): { ok: boolean; errors: Valida
   return { ok: errors.length === 0, errors, value };
 }
 
+/** 校验并返回配置；不通过时抛出聚合后的错误信息。 */
 export function normalizeAppConfig(input: unknown): AppConfig {
   const result = validateAppConfig(input);
   if (result.ok && result.value) return result.value;

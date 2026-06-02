@@ -1,3 +1,4 @@
+// 配置导入导出分区：以完整 JSON 形式查看/编辑配置，并支持文件导入与子集导出。
 import { useEffect, useState } from 'react';
 import { CloudDownload, Pencil, RefreshCw, Save, Upload, X } from 'lucide-react';
 import { formatAppConfig, parseAppConfigText } from '../../shared/json';
@@ -12,12 +13,14 @@ type ConfigSectionProps = {
   setStatus: (status: string) => void;
 };
 
+/** 配置导入导出分区组件。setStatus 用于在校验/导入导出过程中反馈状态文案。 */
 export function ConfigSection({ config, persist, setStatus }: ConfigSectionProps) {
   const [jsonText, setJsonText] = useState('');
   const [jsonEditMode, setJsonEditMode] = useState(false);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [exportModalOpen, setExportModalOpen] = useState(false);
 
+  // 非编辑态时，让文本框与校验结果跟随外部配置刷新；编辑态则保留用户正在输入的草稿不被覆盖。
   useEffect(() => {
     if (!jsonEditMode) {
       setJsonText(formatAppConfig(config));
@@ -25,6 +28,7 @@ export function ConfigSection({ config, persist, setStatus }: ConfigSectionProps
     }
   }, [config, jsonEditMode]);
 
+  // 保存编辑框中的 JSON：先解析校验，失败则展示错误，成功才落盘并退出编辑态。
   async function saveJsonConfig() {
     try {
       const result = parseAppConfigText(jsonText);
@@ -40,6 +44,7 @@ export function ConfigSection({ config, persist, setStatus }: ConfigSectionProps
     }
   }
 
+  // 从文件导入：读取文本并解析校验，合法则整体替换当前配置。
   async function importJson(file: File) {
     const text = await file.text();
     const result = parseAppConfigText(text);
@@ -51,6 +56,7 @@ export function ConfigSection({ config, persist, setStatus }: ConfigSectionProps
     await persist(result.value, '已导入配置');
   }
 
+  // 导出：按弹窗选项裁剪出配置子集，生成 Blob 并触发浏览器下载，最后释放临时对象 URL。
   async function exportJson(projectIds: string[], includeMinio: boolean, includeAppearance: boolean) {
     const next = exportConfigSubset(config, projectIds, includeMinio, includeAppearance);
     const blob = new Blob([JSON.stringify(next, null, 2)], { type: 'application/json' });

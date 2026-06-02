@@ -1,3 +1,6 @@
+// content/index.tsx：内容脚本入口，向登录页注入悬浮面板/账号选择器，并实现一键填充。
+// 职责包括：根据当前页面匹配项目/环境、渲染账号表格浮窗、监听输入框点击弹出账号选择器、
+// 自动填充默认账号、与 popup 通过消息交互，以及把全部 UI 限制在 #web-account-assistant-root 内。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
@@ -41,10 +44,12 @@ type AccountPickerState = {
 const PANEL_OFFSET = 24;
 const TOAST_DURATION_MS = 1200;
 
+/** 用当前页面 URL 匹配出命中的项目+环境（含字段配置与账号列表）；无匹配返回 null。 */
 function findCurrentMatch(config: AppConfig): MatchedEnvironment | null {
   return matchCurrentPage(config, window.location);
 }
 
+/** 将项目配置的「弹窗位置」枚举映射为 fixed 定位样式（九宫格 + 居中）。 */
 function getPanelAnchorStyle(position: PopupPosition): CSSProperties {
   switch (position) {
     case 'top-left':
@@ -69,6 +74,7 @@ function getPanelAnchorStyle(position: PopupPosition): CSSProperties {
   }
 }
 
+/** 把汇总后的扩展样式注入页面 <head>（带去重 id），样式已被改写为限定在根节点内。 */
 function injectStylesheet() {
   const id = 'web-account-assistant-style';
   if (document.getElementById(id)) return;
@@ -92,6 +98,7 @@ function toContentStyles(styles: string): string {
     .replace(/\.(wm-motion-off)/g, '#web-account-assistant-root.$1');
 }
 
+/** 按命中环境的字段配置，将所选账号写入对应输入框；写值后派发原生事件以兼容受控表单。 */
 async function fillMatchedAccount(currentMatch: MatchedEnvironment, account: AccountRecord) {
   for (const field of currentMatch.fields) {
     if (field.type !== 'input') continue;
@@ -109,6 +116,7 @@ async function fillMatchedAccount(currentMatch: MatchedEnvironment, account: Acc
   }
 }
 
+/** 拼出账号在选择器中的展示文本：仅取非敏感字段，用 | 连接，用于区分同环境下的多个账号。 */
 function accountInfoText(currentMatch: MatchedEnvironment, account: AccountRecord): string {
   const text = currentMatch.fields
     .filter((field) => !field.sensitive)
@@ -118,6 +126,7 @@ function accountInfoText(currentMatch: MatchedEnvironment, account: AccountRecor
   return text || '未填写非敏感字段';
 }
 
+/** 判断点击目标是否为当前环境配置过的某个填充输入框，决定是否在该处弹出账号选择器。 */
 function isConfiguredInputTarget(target: EventTarget | null, currentMatch: MatchedEnvironment): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return currentMatch.fields.some((field) => {
@@ -127,11 +136,13 @@ function isConfiguredInputTarget(target: EventTarget | null, currentMatch: Match
     try {
       return target.matches(selector);
     } catch {
+      // 选择器写法可能非法，matches 抛错时视为不匹配而非中断点击处理。
       return false;
     }
   });
 }
 
+/** 登录页注入的主面板组件：渲染账号表格浮窗与账号选择器，承载填充/复制/编辑等交互。 */
 function Panel() {
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [matched, setMatched] = useState<MatchedEnvironment | null>(null);

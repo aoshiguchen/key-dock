@@ -1,3 +1,4 @@
+// 项目管理分区：按分组/名称筛选项目列表，并提供项目、字段、环境的新增/编辑/删除入口。
 import { useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { DEFAULT_PROJECT_GROUP_CODE } from '../../shared/defaults';
@@ -13,6 +14,7 @@ type ProjectsSectionProps = {
   showToast: (target: HTMLElement, message: string, variant?: ToastVariant) => void;
 };
 
+/** 项目管理分区组件。弹窗在抽屉/居中两种形态间按外观设置切换。 */
 export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
   const [selectedProjectGroupCode, setSelectedProjectGroupCode] = useState('');
   const [projectKeyword, setProjectKeyword] = useState('');
@@ -27,6 +29,7 @@ export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
   const projectGroups = config.projectGroups ?? [];
   const fieldTemplates = config.fieldTemplates ?? [];
 
+  // 按选中分组 + 名称关键字过滤项目；未设置分组的项目按默认分组处理，关键字大小写不敏感。
   const filteredProjects = useMemo(() => {
     const keyword = projectKeyword.trim().toLowerCase();
     return config.projects.filter((project) => {
@@ -36,11 +39,16 @@ export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
     });
   }, [config, projectKeyword, selectedProjectGroupCode]);
 
+  // 由分组 code 解析展示名；空 code 归默认分组，找不到分组定义时回退显示 code 本身。
   function getGroupName(code: string | undefined): string {
     const resolved = code || DEFAULT_PROJECT_GROUP_CODE;
     return projectGroups.find((group) => group.code === resolved)?.name ?? resolved;
   }
 
+  /**
+   * 新增或更新项目：originalId 为空表示新增、追加到列表末尾；非空表示编辑、替换原项目。
+   * 保存前兜底分组 code 为默认值，并调用 syncAccountsWithFields 使账号字段与项目字段保持一致。
+   */
   async function upsertProject(originalId: string | null, nextProject: ProjectConfig) {
     const normalized = syncAccountsWithFields({ ...nextProject, groupCode: nextProject.groupCode || DEFAULT_PROJECT_GROUP_CODE });
     const nextConfig = originalId ? replaceProject(config, originalId, normalized) : { ...config, projects: [...config.projects, normalized] };
@@ -48,6 +56,7 @@ export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
     setProjectModal({ open: false, originalId: null, project: null });
   }
 
+  // 删除项目：先二次确认再落盘。
   async function deleteProject(projectId: string) {
     const project = config.projects.find((item) => item.id === projectId);
     if (!project) return;
@@ -55,6 +64,7 @@ export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
     await persist(removeProject(config, projectId), '项目已删除');
   }
 
+  // 保存字段配置：字段变更后同步账号 values，剔除废弃字段并补齐新增字段。
   async function saveProjectFields(projectId: string, nextFields: FieldConfig[]) {
     const project = config.projects.find((item) => item.id === projectId);
     if (!project) return;
@@ -63,6 +73,7 @@ export function ProjectsSection({ config, persist }: ProjectsSectionProps) {
     setFieldModalProjectId(null);
   }
 
+  // 保存环境配置：仅替换 envs，账号字段结构不受影响，无需重新规整。
   async function saveProjectEnvs(projectId: string, nextEnvs: EnvConfig[]) {
     const project = config.projects.find((item) => item.id === projectId);
     if (!project) return;

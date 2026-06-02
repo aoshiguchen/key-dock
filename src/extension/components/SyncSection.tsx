@@ -1,3 +1,4 @@
+// 数据同步分区：配置 MinIO 连接参数，并提供测试连接、远程<->本地双向同步。
 import { useState } from 'react';
 import { CloudDownload, CloudUpload, Plug } from 'lucide-react';
 import { fetchRemoteConfig, pushRemoteConfig, testMinioConnection } from '../../shared/minio';
@@ -14,14 +15,17 @@ type SyncSectionProps = {
 
 type SyncTabKey = 'minio';
 
+/** 数据同步分区组件。同步操作均以「是否启用 MinIO」为前置判断，未启用直接给出警告提示。 */
 export function SyncSection({ config, persist, setStatus, showToast }: SyncSectionProps) {
   const [syncTab, setSyncTab] = useState<SyncTabKey>('minio');
   const [testing, setTesting] = useState(false);
 
+  // 合并式更新 sync 配置（含 endpoint/凭据/启用开关等），写回本地。
   function updateSyncField(patch: Partial<AppConfig['sync']>) {
     void persist({ ...config, sync: { ...config.sync, ...patch } }, 'MinIO 配置已保存');
   }
 
+  // 测试连接：未启用 MinIO 直接拦截；testing 用于禁用按钮防止重复点击。
   async function handleTestConnection(target: HTMLElement) {
     if (!config.sync.minioEnabled) {
       showToast(target, '未启用 MinIO', 'warning');
@@ -38,6 +42,7 @@ export function SyncSection({ config, persist, setStatus, showToast }: SyncSecti
     }
   }
 
+  // 远程 -> 本地：拉取远程配置后与本地按 cloudToLocal 策略合并；有冲突/告警则以 warning 形式提示并保留警告文案。
   async function syncFromCloud(target: HTMLElement) {
     if (!config.sync.minioEnabled) {
       setStatus('未启用 MinIO');
@@ -57,6 +62,7 @@ export function SyncSection({ config, persist, setStatus, showToast }: SyncSecti
     }
   }
 
+  // 本地 -> 远程：把完整配置上传到 MinIO；成功后更新 meta 的同步时间并递增远程版本号，用于后续冲突判断。
   async function syncToCloud(target: HTMLElement) {
     if (!config.sync.minioEnabled) {
       setStatus('未启用 MinIO');

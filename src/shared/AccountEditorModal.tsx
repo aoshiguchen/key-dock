@@ -1,19 +1,28 @@
+// 通用账号新增/编辑弹窗，登录页与配置管理页共用。
+// 负责按项目字段定义渲染表单、必填校验、敏感字段明文切换，以及（可选）项目/环境上下文选择。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Trash2, X } from 'lucide-react';
 import { createAccountDraft } from './account-utils';
 import { createId } from './id';
 import type { AccountRecord, ProjectConfig } from './types';
 
+// 递增计数器，为每个弹窗实例生成唯一 title id（用于 aria-labelledby）。
 let accountModalIdCounter = 0;
 
 type Props = {
   open: boolean;
+  /** 当前账号所属项目；为 null 时弹窗不渲染。其 fields 定义决定表单字段。 */
   project: ProjectConfig | null;
+  /** 可选项目列表；传入后渲染「项目」下拉，可在新增时切换上下文。不传则不显示项目/环境选择。 */
   projects?: ProjectConfig[];
+  /** 受控的当前选中项目 id；缺省回退到 project.id。 */
   projectId?: string;
+  /** 受控的当前选中环境 id；缺省回退到所选项目的首个环境。 */
   envId?: string;
+  /** 待编辑账号；为空表示新增。 */
   account?: AccountRecord | null;
   title: string;
+  /** 锁定上下文：为 true 时即便处于新增态也禁用项目/环境选择，强制固定为当前匹配到的项目/环境（登录页场景）。 */
   lockContext?: boolean;
   onClose: () => void;
   onSave: (record: AccountRecord) => void;
@@ -22,6 +31,14 @@ type Props = {
   onEnvChange?: (envId: string) => void;
 };
 
+/**
+ * 账号编辑弹窗。
+ * 关键交互：
+ * - 项目/环境选择仅在「新增 + 未锁定上下文 + 有可选项目」时可编辑（editableContext），
+ *   编辑已有账号或锁定上下文时只读；
+ * - 敏感字段（field.sensitive）默认以密码形式遮蔽，提供眼睛按钮逐字段切换明文（revealedFields）；
+ * - 保存前对必填字段做校验。
+ */
 export function AccountEditorModal({
   open,
   project,
@@ -44,11 +61,14 @@ export function AccountEditorModal({
 
   const [draft, setDraft] = useState<AccountRecord | null>(initialDraft);
   const [requiredErrors, setRequiredErrors] = useState<Record<string, boolean>>({});
+  // 记录哪些敏感字段已切换为明文显示，key 为字段 key。
   const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
+  // 记录打开弹窗前的焦点元素，关闭时归还焦点（无障碍）。
   const triggerRef = useRef<HTMLElement | null>(null);
   const [titleId] = useState(() => `wm-account-modal-title-${++accountModalIdCounter}`);
 
+  // 将 Tab 焦点限制在弹窗内循环，防止焦点逃逸到背景页面。
   const trapFocus = useCallback((event: KeyboardEvent) => {
     if (event.key !== 'Tab' || !dialogRef.current) return;
     const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
@@ -70,6 +90,7 @@ export function AccountEditorModal({
     }
   }, []);
 
+  // 每次打开或切换项目/账号时，按项目字段重建草稿并清空校验、明文显示状态。
   useEffect(() => {
     if (!open || !project) return;
     setDraft(createAccountDraft(project, account ?? undefined));
@@ -77,6 +98,7 @@ export function AccountEditorModal({
     setRevealedFields({});
   }, [account, open, project]);
 
+  // 打开时聚焦首个可聚焦元素并装载焦点陷阱；关闭时还原焦点。
   useEffect(() => {
     if (!open) return;
     triggerRef.current = document.activeElement as HTMLElement;
@@ -99,10 +121,12 @@ export function AccountEditorModal({
   const selectedProjectId = projectId ?? project.id;
   const selectedProject = projectOptions.find((item) => item.id === selectedProjectId) ?? project;
   const selectedEnvId = envId ?? selectedProject.envs[0]?.id ?? '';
+  // 仅新增、未锁定上下文且存在可选项目时才允许改项目/环境；编辑或锁定态下置灰。
   const editableContext = !account && !lockContext && projectOptions.length > 0;
 
   function handleSave() {
     if (!project || !draft) return;
+    // 收集所有必填且为空的字段，标红并阻断保存。
     const nextErrors = Object.fromEntries(
       project.fields
         .filter((field) => field.required && !String(draft.values[field.key] ?? '').trim())
@@ -124,6 +148,7 @@ export function AccountEditorModal({
         </div>
 
         <div className="wm-modal__body">
+          {/* 仅当传入 projects 时渲染项目/环境选择；disabled 由 editableContext 控制（锁定/编辑态只读）。 */}
           {projects ? (
             <>
               <label className="wm-field wm-field--aligned">
@@ -179,6 +204,7 @@ export function AccountEditorModal({
             </div>
           </label>
 
+          {/* 按项目字段定义动态渲染输入项：敏感字段默认遮蔽并带眼睛切换按钮。 */}
           {project.fields.map((field) => (
             <label className="wm-field wm-field--aligned" key={field.key}>
               <span>
@@ -200,6 +226,7 @@ export function AccountEditorModal({
                           [field.key]: value,
                         },
                       });
+                      // 一旦填入非空内容即清除该字段的必填错误标记。
                       if (value.trim()) {
                         setRequiredErrors((prev) => {
                           const next = { ...prev };
@@ -209,6 +236,7 @@ export function AccountEditorModal({
                       }
                     }}
                   />
+                  {/* 敏感字段眼睛按钮：切换该字段明文/遮蔽显示，样式与登录页账号列表弹窗一致。 */}
                   {field.sensitive ? (
                     <button
                       className="wm-icon-btn"

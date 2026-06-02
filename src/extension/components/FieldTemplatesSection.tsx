@@ -1,3 +1,5 @@
+// 配置管理页「字段配置模板」子模块：维护可复用的字段集合模板（列表、增删改、排序、字段编辑）。
+// 模板用于在新建项目时快速套用一套字段定义，避免逐个手填。
 import { useMemo, useState } from 'react';
 import { GripVertical, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { DEFAULT_PROJECT_GROUP_CODE } from '../../shared/defaults';
@@ -11,10 +13,18 @@ type FieldTemplatesSectionProps = {
   showToast: (target: HTMLElement, message: string, variant?: ToastVariant) => void;
 };
 
+/**
+ * 字段配置模板管理区。
+ * @param config 当前完整配置。
+ * @param persist 持久化整份配置并提示状态。
+ * @param showToast 在指定元素附近弹出轻提示。
+ */
 export function FieldTemplatesSection({ config, persist, showToast }: FieldTemplatesSectionProps) {
   const [templateKeyword, setTemplateKeyword] = useState('');
+  // templateForm 兼作新增/编辑：originalId 为 null 表示新增。
   const [templateForm, setTemplateForm] = useState<{ originalId: string | null; draft: FieldTemplate } | null>(null);
   const [draggedTemplateId, setDraggedTemplateId] = useState<string | null>(null);
+  // 当前打开「字段配置」弹窗的模板 id，null 表示未打开。
   const [fieldTemplateModalId, setFieldTemplateModalId] = useState<string | null>(null);
 
   const fieldTemplates = config.fieldTemplates ?? [];
@@ -29,6 +39,8 @@ export function FieldTemplatesSection({ config, persist, showToast }: FieldTempl
     [fieldTemplateModalId, fieldTemplates],
   );
 
+  // 复用 ProjectFieldsModal 编辑模板字段：把选中模板「伪装」成一个临时 ProjectConfig
+  // （借用其 fields 字段编辑能力），envs 置空、归入默认分组，仅用于驱动该弹窗。
   const fieldTemplateProject = useMemo<ProjectConfig | null>(() => {
     if (!selectedFieldTemplate) return null;
     return {
@@ -66,6 +78,7 @@ export function FieldTemplatesSection({ config, persist, showToast }: FieldTempl
     setTemplateForm(null);
   }
 
+  // 局部更新某模板字段并落盘；若该模板正在表单中编辑，同步刷新草稿避免回显过期数据。
   async function updateFieldTemplate(templateId: string, patch: Partial<FieldTemplate>) {
     await persist(
       {
@@ -208,6 +221,7 @@ export function FieldTemplatesSection({ config, persist, showToast }: FieldTempl
         ) : null}
       </div>
 
+      {/* 模板字段编辑弹窗：保存后写回模板的 fields 并关闭。 */}
       <ProjectFieldsModal
         open={Boolean(fieldTemplateModalId)}
         project={fieldTemplateProject}

@@ -1,3 +1,5 @@
+// 配置管理页「账号管理」子模块：跨项目/环境扁平展示账号列表，支持按分组/项目/环境/关键字筛选，
+// 并提供新增、编辑、设默认、删除等操作。
 import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { AccountEditorModal } from '../../shared/AccountEditorModal';
@@ -12,11 +14,18 @@ type AccountsSectionProps = {
   showToast: (target: HTMLElement, message: string, variant?: ToastVariant) => void;
 };
 
+/**
+ * 账号管理区。
+ * @param config 当前完整配置。
+ * @param persist 持久化整份配置并提示状态。
+ */
 export function AccountsSection({ config, persist }: AccountsSectionProps) {
+  // 四级筛选条件：分组 -> 项目 -> 环境 -> 关键字，逐级联动收窄账号列表。
   const [selectedAccountGroupCode, setSelectedAccountGroupCode] = useState('');
   const [selectedAccountProjectId, setSelectedAccountProjectId] = useState('');
   const [selectedAccountEnvId, setSelectedAccountEnvId] = useState('');
   const [accountKeyword, setAccountKeyword] = useState('');
+  // 账号新增/编辑弹窗状态：account 为空表示新增，projectId/envId 标记其归属上下文。
   const [accountModal, setAccountModal] = useState<{
     open: boolean;
     projectId: string;
@@ -26,6 +35,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
 
   const projectGroups = config.projectGroups ?? [];
 
+  // 把分组 code 解析为分组名用于表格展示；缺省时退回默认分组，找不到则原样回显 code。
   function getGroupName(code: string | undefined): string {
     const resolved = code || DEFAULT_PROJECT_GROUP_CODE;
     return projectGroups.find((group) => group.code === resolved)?.name ?? resolved;
@@ -36,6 +46,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
     [config, selectedAccountProjectId],
   );
 
+  // 配置变更后若已选项目被删除，清空项目/环境筛选，避免引用失效 id。
   useEffect(() => {
     if (selectedAccountProjectId && !config.projects.some((p) => p.id === selectedAccountProjectId)) {
       setSelectedAccountProjectId('');
@@ -43,6 +54,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
     }
   }, [config, selectedAccountProjectId]);
 
+  // 已选环境若在当前项目中不再存在（如项目切换/环境删除），清空环境筛选。
   useEffect(() => {
     if (!selectedAccountProjectId || !selectedAccountProject || !selectedAccountEnvId) return;
     if (!selectedAccountProject.envs.some((item) => item.id === selectedAccountEnvId)) {
@@ -50,9 +62,11 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
     }
   }, [selectedAccountEnvId, selectedAccountProject, selectedAccountProjectId]);
 
+  // 将多层嵌套的「项目 -> 环境 -> 账号」按当前筛选条件展开为扁平表格行。
   const accountRows = useMemo(() => {
     const rows: Array<{ project: ProjectConfig; env: EnvConfig; account: AccountRecord }> = [];
     for (const project of config.projects) {
+      // 分组筛选：项目无 groupCode 时视为默认分组。
       if (selectedAccountGroupCode && (project.groupCode ?? DEFAULT_PROJECT_GROUP_CODE) !== selectedAccountGroupCode) continue;
       if (selectedAccountProjectId && project.id !== selectedAccountProjectId) continue;
       for (const env of project.envs) {
@@ -60,6 +74,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
         for (const account of env.accounts) {
           const keyword = accountKeyword.trim().toLowerCase();
           if (keyword) {
+            // 关键字仅匹配非敏感字段拼成的可搜索文本，避免明文检索密码等敏感值。
             const preview = accountSearchText(project, account).toLowerCase();
             if (!preview.includes(keyword)) continue;
           }
@@ -82,6 +97,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
     await persist(removeAccount(config, projectId, envId, accountId), '账号已删除');
   }
 
+  // 设为默认账号；saveAccount 会负责清除同环境下其他账号的默认标记。
   async function setDefaultAccountItem(projectId: string, envId: string, accountId: string) {
     const project = config.projects.find((item) => item.id === projectId);
     const env = project?.envs.find((item) => item.id === envId);
@@ -120,6 +136,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
                 className="wm-btn wm-btn--primary"
                 type="button"
                 onClick={() => {
+                  // 新增账号默认落在当前筛选的项目/环境上下文；未选则退回首个项目及其首个环境。
                   const projectId = selectedAccountProjectId || config.projects[0]?.id || '';
                   const project = config.projects.find((item) => item.id === projectId);
                   const envId = selectedAccountEnvId || project?.envs[0]?.id || '';
@@ -160,6 +177,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
                   }}
                 >
                   <option value="">全部</option>
+                  {/* 项目下拉随分组联动：仅列出当前分组下的项目（未选分组则全部）。 */}
                   {config.projects
                     .filter(
                       (project) =>
@@ -175,6 +193,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
               </label>
               <label className="wm-field">
                 <span>环境</span>
+                {/* 环境下拉依赖已选项目；未选项目时禁用并强制空值。 */}
                 <select
                   value={selectedAccountProjectId ? selectedAccountEnvId : ''}
                   disabled={!selectedAccountProjectId}
@@ -252,6 +271,7 @@ export function AccountsSection({ config, persist }: AccountsSectionProps) {
         </div>
       </div>
 
+      {/* 账号编辑弹窗：配置管理页允许切换项目/环境（不锁定上下文），与登录页固定上下文不同。 */}
       <AccountEditorModal
         open={accountModal.open}
         project={accountModal.projectId ? config.projects.find((item) => item.id === accountModal.projectId) ?? null : null}

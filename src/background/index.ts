@@ -1,3 +1,5 @@
+// Service Worker 后台脚本：标记本地开发版角标、首次安装初始化默认配置，
+// 并响应来自其它页面的配置读写消息（GET/SAVE_APP_CONFIG）。
 import { DEFAULT_CONFIG } from '../shared/defaults';
 import { ensureInitialConfig, readAppConfig, writeAppConfig } from '../shared/storage';
 import type { AppConfig } from '../shared/types';
@@ -17,6 +19,7 @@ function markDevBuild(): void {
 
 markDevBuild();
 
+// 首次安装/更新时确保存在初始配置；若无任何项目则写入默认配置兜底。
 chrome.runtime.onInstalled.addListener(async () => {
   const config = await ensureInitialConfig();
   if (!config.projects?.length) {
@@ -24,6 +27,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+// 后台消息路由：处理配置的读取与保存。返回 true 表示将异步调用 sendResponse（保持消息通道开启）。
 chrome.runtime.onMessage.addListener((message: { type?: string; appConfig?: AppConfig }, _sender: unknown, sendResponse: (response: unknown) => void) => {
   if (message?.type === 'GET_APP_CONFIG') {
     readAppConfig()

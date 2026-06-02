@@ -1,5 +1,7 @@
+// 共享的外链常量：官网与代码仓库跳转地址。
 import { APP_INFO } from './app-info';
 
+/** 官网/帮助/关于入口链接。 */
 export const PRODUCT_LINK = {
   label: '官网|帮助|关于',
   url: APP_INFO.homepageUrl,

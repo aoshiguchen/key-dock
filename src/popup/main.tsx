@@ -1,3 +1,5 @@
+// 插件工具栏弹窗（popup）入口：识别当前标签页所属项目/环境，展示并填充该环境下账号，
+// 通过向 content 脚本发消息完成「填充账号」「打开账号编辑器」等操作。
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChevronDown, ChevronRight, Pencil, Plus } from 'lucide-react';
@@ -15,6 +17,7 @@ type ActiveTab = {
   url?: string;
 };
 
+// 取 manifest 版本号的「主.次」短版本用于展示（忽略修订号）。
 function getShortVersion(): string {
   const version = chrome.runtime?.getManifest?.()?.version ?? '0.1';
   const [major, minor] = version.split('.');
@@ -32,6 +35,7 @@ function toUrlLike(urlText: string) {
   };
 }
 
+// 把账号的非敏感字段值拼成一行摘要用于列表展示，避免泄露密码等敏感信息。
 function accountSummary(match: MatchedEnvironment, account: AccountRecord): string {
   const text = match.fields
     .filter((field) => !field.sensitive)
@@ -49,6 +53,7 @@ function Popup() {
   const [accountsExpanded, setAccountsExpanded] = useState(false);
   const [fillStatus, setFillStatus] = useState('');
 
+  // 初始化：读取启用状态，查询当前活动标签页，并按其 URL 匹配出对应项目/环境。
   useEffect(() => {
     void readExtensionEnabled().then(setEnabled);
     void chrome.tabs.query({ active: true, currentWindow: true }, async (tabs: ActiveTab[]) => {
@@ -56,11 +61,13 @@ function Popup() {
       setActiveTab(tab);
       const config = await readAppConfig();
       setAppearance(config.global.appearance);
+      // 仅对 http(s) 页面尝试匹配，跳过 chrome:// 等内部页。
       if (!tab?.url || !/^https?:/.test(tab.url)) return;
       setMatched(matchCurrentPage(config, toUrlLike(tab.url)));
     });
   }, []);
 
+  // 切换到不同项目/环境时收起账号列表，避免沿用上一个上下文的展开态。
   useEffect(() => {
     setAccountsExpanded(false);
   }, [matched?.project.id, matched?.env.id]);
@@ -71,6 +78,7 @@ function Popup() {
     await writeExtensionEnabled(nextEnabled);
   }
 
+  // 打开独立的管理面板页（extension.html）并关闭弹窗。
   function openManager() {
     void chrome.tabs.create({
       url: chrome.runtime.getURL('extension.html'),
@@ -78,6 +86,7 @@ function Popup() {
     window.close();
   }
 
+  // 向当前标签页的 content 脚本发送填充指令，由其在页面上完成自动填充。
   async function fillAccount(account: AccountRecord) {
     if (!activeTab?.id) return;
     setFillStatus('');
@@ -96,6 +105,7 @@ function Popup() {
     }
   }
 
+  // 请求 content 脚本在页面内打开账号编辑器；account 为空表示新增。
   async function openAccountModal(account: AccountRecord | null) {
     if (!activeTab?.id) return;
     setFillStatus('');

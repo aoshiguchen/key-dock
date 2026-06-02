@@ -1,3 +1,4 @@
+// 配置管理页（options 页）入口：装载根组件、加载/持久化全局配置，并按侧边栏选中项渲染各功能分区。
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { APP_INFO } from '../shared/app-info';
@@ -23,12 +24,14 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { toast, showToast } = useToast();
 
+  // 统一的配置写入入口：先更新内存状态与状态栏文案，再异步落盘到本地存储。
   async function persist(next: AppConfig, nextStatus = '已保存到本地') {
     setAppConfig(next);
     setStatus(nextStatus);
     await writeAppConfig(next);
   }
 
+  // 首次挂载时从本地存储读取配置；失败则把错误信息显示到状态栏。
   useEffect(() => {
     readAppConfig()
       .then((loaded) => {
@@ -41,9 +44,11 @@ function App() {
   useEffect(() => {
     const root = document.getElementById('root');
     if (!root || !appConfig) return;
+    // 把外观主题应用到根节点 className，使配置页跟随用户选择的主题/字号。
     root.className = getAppearanceClassName(appConfig.global.appearance);
   }, [appConfig]);
 
+  // 配置尚未加载完成时只渲染加载占位卡片。
   if (!appConfig) {
     return (
       <div style={{ padding: 24 }}>
@@ -73,6 +78,7 @@ function App() {
             <span className="wm-status">{status}</span>
           </div>
           <div className="wm-panel__bd">
+            {/* 根据侧边栏选中的分区渲染对应面板；各分区共享同一 persist 写入入口与 toast 提示。 */}
             {section === 'global' && <GlobalSection config={appConfig} persist={persist} />}
             {section === 'groups' && <GroupsSection config={appConfig} persist={persist} showToast={showToast} />}
             {section === 'projects' && <ProjectsSection config={appConfig} persist={persist} showToast={showToast} />}

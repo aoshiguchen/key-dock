@@ -1,6 +1,8 @@
+// 外观主题：主题/字号选项、类型守卫、外观规范化以及生成根元素 class 名。
 import { DEFAULT_APPEARANCE } from './defaults';
 import type { AppearanceConfig, ThemeMode, FontScale } from './types';
 
+/** 主题选项及中文说明，供外观设置 UI 使用。 */
 export const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; description: string }> = [
   { value: 'tech-dark', label: '科技黑', description: '暗色、棱角、紧凑' },
   { value: 'minimal-light', label: '简约白', description: '明亮、清晰、宽松' },
@@ -21,6 +23,7 @@ export function isFontScale(value: unknown): value is FontScale {
   return value === 'small' || value === 'medium' || value === 'large';
 }
 
+/** 将任意值规范化为完整外观配置，非法/缺失项回落到默认外观。 */
 export function normalizeAppearance(value: unknown): AppearanceConfig {
   const input = value && typeof value === 'object' ? (value as Partial<AppearanceConfig>) : {};
   return {
@@ -30,6 +33,7 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
   };
 }
 
+/** 由外观配置拼出应挂到根元素的 class 名（主题 + 字号 + 动效开关）。 */
 export function getAppearanceClassName(appearance: AppearanceConfig): string {
   const normalized = normalizeAppearance(appearance);
   return [
@@ -39,6 +43,7 @@ export function getAppearanceClassName(appearance: AppearanceConfig): string {
   ].join(' ');
 }
 
+/** 是否使用抽屉式项目布局：非「简约白」主题下启用。 */
 export function shouldUseProjectDrawer(appearance: AppearanceConfig): boolean {
   return normalizeAppearance(appearance).theme !== 'minimal-light';
 }

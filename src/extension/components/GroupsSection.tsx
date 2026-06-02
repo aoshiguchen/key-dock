@@ -1,3 +1,5 @@
+// 配置管理页「项目分组」子模块：项目分组的列表、新增/编辑/删除以及拖拽排序。
+// 分组用于对项目进行归类，默认分组（DEFAULT_PROJECT_GROUP_CODE）不可删除/改 code。
 import { useState } from 'react';
 import { GripVertical, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { DEFAULT_PROJECT_GROUP_CODE } from '../../shared/defaults';
@@ -10,7 +12,14 @@ type GroupsSectionProps = {
   showToast: (target: HTMLElement, message: string, variant?: ToastVariant) => void;
 };
 
+/**
+ * 项目分组管理区。
+ * @param config 当前完整配置。
+ * @param persist 持久化整份配置并提示状态。
+ * @param showToast 在指定元素附近弹出轻提示。
+ */
 export function GroupsSection({ config, persist, showToast }: GroupsSectionProps) {
+  // groupForm 同时承载新增与编辑：originalCode 为 null 表示新增，非 null 表示在编辑该 code 的分组。
   const [groupForm, setGroupForm] = useState<{ originalCode: string | null; draft: ProjectGroup } | null>(null);
   const [draggedGroupCode, setDraggedGroupCode] = useState<string | null>(null);
 
@@ -35,6 +44,7 @@ export function GroupsSection({ config, persist, showToast }: GroupsSectionProps
       showToast(target, '分组 code 和名称不能为空', 'warning');
       return;
     }
+    // code 在所有分组内须唯一（编辑时排除自身原 code）。
     const duplicate = projectGroups.some((group) => group.code === draft.code && group.code !== groupForm.originalCode);
     if (duplicate) {
       showToast(target, '分组 code 已存在', 'warning');
@@ -43,6 +53,7 @@ export function GroupsSection({ config, persist, showToast }: GroupsSectionProps
     const nextGroups = groupForm.originalCode
       ? projectGroups.map((group) => (group.code === groupForm.originalCode ? draft : group))
       : [...projectGroups, draft];
+    // 编辑时若 code 发生变更，需同步把原本归属该 code 的项目迁移到新 code，避免项目变成「孤儿分组」。
     const nextProjects =
       groupForm.originalCode && groupForm.originalCode !== draft.code
         ? config.projects.map((project) =>
@@ -63,10 +74,12 @@ export function GroupsSection({ config, persist, showToast }: GroupsSectionProps
   }
 
   async function deleteProjectGroup(code: string) {
+    // 默认分组不可删除，作为项目归属的兜底。
     if (code === DEFAULT_PROJECT_GROUP_CODE) return;
     const group = projectGroups.find((item) => item.code === code);
     if (!group) return;
     if (!confirm(`确认删除分组 ${group.name} ? 分组下项目会归入默认分组。`)) return;
+    // 删除分组的同时，把其下项目回收到默认分组，保证项目始终有合法归属。
     await persist(
       {
         ...config,
@@ -108,6 +121,7 @@ export function GroupsSection({ config, persist, showToast }: GroupsSectionProps
                   onDrop={(event) => void reorderProjectGroups(draggedGroupCode, group.code, event.currentTarget)}
                 >
                   <td>
+                    {/* 拖拽手柄：仅手柄可拖动，行内的 onDrop 接收并完成排序。 */}
                     <button
                       type="button"
                       className="wm-icon-btn"

@@ -1,3 +1,4 @@
+// 全局配置分区：展示产品信息，并管理全局开关与外观（主题/字号/动效）设置。
 import { APP_INFO } from '../../shared/app-info';
 import { PRODUCT_LINK, REPO_LINKS } from '../../shared/constants';
 import { THEME_OPTIONS, FONT_SCALE_OPTIONS } from '../../shared/theme';
@@ -8,11 +9,14 @@ type GlobalSectionProps = {
   persist: (next: AppConfig, status?: string) => Promise<void>;
 };
 
+/** 全局配置分区组件，任意开关变更都即时通过 persist 落盘。 */
 export function GlobalSection({ config, persist }: GlobalSectionProps) {
+  // 合并式更新 global 顶层字段（如各类开关），其余字段保持不变。
   function updateGlobalConfig(patch: Partial<AppConfig['global']>) {
     void persist({ ...config, global: { ...config.global, ...patch } }, '全局配置已保存');
   }
 
+  // 合并式更新 global.appearance 子对象，单独维护以免覆盖其他外观字段。
   function updateAppearance(patch: Partial<AppConfig['global']['appearance']>) {
     void persist(
       {
