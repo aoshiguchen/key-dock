@@ -1,0 +1,5 @@
+- 原始logo(纯logo)：./origin
+- 横版logo：./horizontal
+    - logo-horizontal.svg：横版 logo 矢量源文件（可缩放、可改色，宣传场合的源头）
+    - logo-horizontal.png：横版 logo 标准大尺寸位图（1272×576，透明背景），展示时可按需缩小
+- 竖版logo：./vertical

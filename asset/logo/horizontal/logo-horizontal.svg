@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="636" height="288" viewBox="0 0 636 288" role="img" aria-label="钥栈 KeyDock 横版 logo">
+  <defs>
+    <!-- 品牌渐变：青 → 绿，与原始 logo 完全一致 -->
+    <linearGradient id="kd-brand" x1="18" y1="16" x2="108" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38b6ff"/>
+      <stop offset="1" stop-color="#1ce8a0"/>
+    </linearGradient>
+    <linearGradient id="kd-text" x1="288" y1="24" x2="588" y2="264" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38b6ff"/>
+      <stop offset="1" stop-color="#1ce8a0"/>
+    </linearGradient>
+    <filter id="kd-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#38b6ff" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- 左侧：原始 logo（纯 logo 图形），裁掉 14px 透明留白后铺满 240×240 方形 -->
+  <g transform="translate(24,24) scale(2.4) translate(-14,-14)">
+    <rect x="14" y="14" width="100" height="100" rx="24" fill="#07111e"/>
+    <path d="M38 31h43c11 0 20 9 20 20v43" fill="none" stroke="url(#kd-brand)" stroke-width="8" stroke-linecap="round"/>
+    <g filter="url(#kd-glow)">
+      <circle cx="48" cy="54" r="18" fill="none" stroke="url(#kd-brand)" stroke-width="8"/>
+      <path d="M63 67l31 31" fill="none" stroke="url(#kd-brand)" stroke-width="8" stroke-linecap="round"/>
+      <path d="M82 85l12-12M92 95l12-12" fill="none" stroke="#1ce8a0" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="82" cy="46" r="5" fill="#1ce8a0"/>
+      <circle cx="94" cy="58" r="5" fill="#38b6ff"/>
+      <path d="M81 46l13 12" stroke="#38b6ff" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- 右侧文字：上「钥栈」下「Key Dock」。
+       textLength=300 + lengthAdjust 强制两行等宽 → 左右两侧严格对齐（x: 288 ~ 588）。
+       y 经过取整微调：中文字形顶部对齐 logo 顶部(24)，英文基线落在底部(264)附近。 -->
+  <text x="288" y="144" textLength="300" lengthAdjust="spacingAndGlyphs"
+        font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif"
+        font-weight="700" font-size="150" fill="url(#kd-text)">钥栈</text>
+  <text x="288" y="263" textLength="300" lengthAdjust="spacingAndGlyphs"
+        font-family="'PingFang SC','Helvetica Neue',Arial,sans-serif"
+        font-weight="600" font-size="74" letter-spacing="1" fill="url(#kd-text)">Key Dock</text>
+</svg>

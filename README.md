@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="asset/logo/icon-128.png" width="112" height="112" alt="钥栈 KeyDock logo" />
+<img src="asset/logo/origin/icon-128.png" width="112" height="112" alt="钥栈 KeyDock logo" />
 
 # 钥栈 · KeyDock
 
